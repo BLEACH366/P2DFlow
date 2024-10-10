@@ -1,0 +1,36 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base
+  - _self_
+
+inference:
+
+  # Use this to write with date-time stamp.
+  name: ${now:%Y-%m-%d}_${now:%H-%M}
+  seed: 123
+  ckpt_path: weights/esm_pretrained.ckpt
+  pmpnn_dir: ./ProteinMPNN/s
+  output_dir: inference_outputs/
+
+  use_gpu: True
+  num_gpus: 1
+
+  interpolant:
+    min_t: 0.01
+    rots:
+      corrupt: True
+      sample_schedule: exp
+      exp_rate: 10
+    trans:
+      corrupt: True
+      sample_schedule: linear
+    sampling:
+      num_timesteps: 100
+    self_condition: True
+
+  samples:
+    validset_path: /cluster/home/shiqian/frame-flow-test1/valid/esm_n_validset_seq.csv
+    esm_savepath: ${inference.output_dir}
+    sample_num: 10
+    sample_batch: 5
+
