@@ -42,15 +42,20 @@ Download the pretrained checkpoint from [Google Drive](https://drive.google.com/
 
 
 ## Training
-* Coming soon!
+To train P2DFlow, firstly make sure you have prepare the dataset according to `Prepare Dataset` and put it in the right folder, then modify the config file in `./configs/base.yaml`(especially for `csv_path`). After this, you can run:
+```
+python -u experiments/train_se3_flows.py
+```
+And you will get the checkpoints in `./ckpt`
 
 
 ## Inference
-To infer for specified protein sequence, firstly modify the input .csv file in `./inference/valid_seq.csv` and config file in `./configs/inference.yaml`, then run:
+To infer for specified protein sequence, firstly modify the input .csv file in `./inference/valid_seq.csv` and config file in `./configs/inference.yaml`(especially for `validset_path`), then run:
 ```
 python -u experiments/inference_se3_flows.py
 ```
-And you will get the results in `inference_outputs/weights/`
+And you will get the results in `./inference_outputs/weights/`
+
 
 ## Evaluation
 * Coming soon!
@@ -58,6 +63,7 @@ And you will get the results in `inference_outputs/weights/`
 
 ## License
 This project is licensed under the terms of the GPL-3.0 license.
+
 
 ## Citation
 * Coming soon!
