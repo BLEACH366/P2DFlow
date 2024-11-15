@@ -42,7 +42,7 @@ Download the pretrained checkpoint from [Google Drive](https://drive.google.com/
 
 
 ## Training
-To train P2DFlow, firstly make sure you have prepare the dataset according to `Prepare Dataset` and put it in the right folder, then modify the config file in `./configs/base.yaml`(especially for `csv_path`). After this, you can run:
+To train P2DFlow, firstly make sure you have prepare the dataset according to `Prepare Dataset` and put it in the right folder, then modify the config file in `./configs/base.yaml`(especially for `csv_path` and `energy_csv_path` ). After this, you can run:
 ```
 python -u experiments/train_se3_flows.py
 ```
