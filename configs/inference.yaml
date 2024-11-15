@@ -29,7 +29,7 @@ inference:
     self_condition: True
 
   samples:
-    validset_path: /cluster/home/shiqian/frame-flow-test1/valid/esm_n_validset_seq.csv
+    validset_path: ./inference/valid_seq.csv
     esm_savepath: ${inference.output_dir}
     sample_num: 10
     sample_batch: 5
