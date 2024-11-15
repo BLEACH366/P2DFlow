@@ -10,11 +10,6 @@ import time
 from Bio import PDB
 import numpy as np
 import mdtraj as md
-
-import sys
-sys.path.remove("/cluster/home/shiqian/frame-flow")
-sys.path.append("/cluster/home/shiqian/frame-flow-test1")
-
 from data import utils as du
 from data import parsers
 from data import errors
