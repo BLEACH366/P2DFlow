@@ -8,6 +8,10 @@ Technical details and thorough benchmarking results can be found in our paper:
     <img src="resources/workflow.jpg" width="600"/>
 </p>
 
+<p align="center">
+    <img src="resources/gen_example.gif" width="600"/>
+</p>
+
 ## Table of Contents
 1. [Installation](#Installation)
 2. [Prepare Dataset](#Prepare-Dataset)
