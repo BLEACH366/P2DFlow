@@ -5,7 +5,7 @@ data:
     use_rotate_enhance: False
     split_frac: 1.0  # 1.0 for no validation seperate
     use_split: True  # whether cut the sequence to slices
-    split_len: 640
+    split_len: 328
     min_num_res: 32
     max_num_res: 2000
     cache_num_res: 0
@@ -14,8 +14,8 @@ data:
     num_eval_lengths: 32
     max_eval_length: 2000
     max_valid_num: 50
-    csv_path: /cluster/home/shiqian/frame-flow-test1/ATLAS/select/pkl/metadata_esm_3A.csv
-    energy_csv_path: /cluster/home/shiqian/frame-flow-test1/ATLAS/select/traj_info.csv
+    csv_path: ./ATLAS/select/pkl/metadata_esm_3A.csv
+    energy_csv_path: ./ATLAS/select/traj_info.csv
   loader:
     num_workers: 2
     prefetch_factor: 10
