@@ -46,7 +46,7 @@ Download the pretrained checkpoint from [Google Drive](https://drive.google.com/
 
 
 ## Inference
-To infer for specified protein sequence, firstly modify the input csv file in `xxx` and config file in `xxx`, then run:
+To infer for specified protein sequence, firstly modify the input .csv file in `./inference/valid_seq.csv` and config file in `./configs/inference.yaml`, then run:
 ```
 python -u experiments/inference_se3_flows.py
 ```
