@@ -5,7 +5,7 @@ Technical details and thorough benchmarking results can be found in our paper:
 * Coming soon!
 
 <p align="center">
-    <img src="resources/workflow.png" width="600"/>
+    <img src="resources/workflow.jpg" width="600"/>
 </p>
 
 ## Table of Contents
