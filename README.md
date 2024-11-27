@@ -66,4 +66,11 @@ This project is licensed under the terms of the GPL-3.0 license.
 
 
 ## Citation
-* [P2DFlow: A Protein Ensemble Generative Model with SE(3) Flow Matching](https://arxiv.org/abs/2411.17196)
+```
+@article{jin2024p2dflow,
+  title={P2DFlow: A Protein Ensemble Generative Model with SE(3) Flow Matching},
+  author={Yaowei Jin, Qi Huang, Ziyang Song, Mingyue Zheng, Dan Teng, Qian Shi},
+  journal={arXiv preprint arXiv:2411.17196},
+  year={2024}
+}
+```
