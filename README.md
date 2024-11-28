@@ -34,7 +34,7 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-####(tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected datasets`; if you prefer to process the data from scratch or work with your own data, please start from the beginning.)
+##### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected datasets`; if you prefer to process the data from scratch or work with your own data, please start from the beginning.)
 #### 1. Download raw ATLAS datasets
 * Coming soon!
 #### 2. Calculate the 'approximate energy' and select representative structures
