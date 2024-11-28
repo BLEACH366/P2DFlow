@@ -57,7 +57,7 @@ then compute predicted static structure using ESMFold:
 ```
 python ./data/cal_static_structure.py --csv_path ${csv_path}
 ```
-(iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './train_csv'
+(iii) Download the `.csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './train_csv'
 
 
 
