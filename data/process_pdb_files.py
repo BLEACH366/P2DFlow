@@ -123,7 +123,6 @@ def process_file(file_path: str, write_dir: str):
     # Write features to pickles.
     du.write_pkl(processed_path, complex_feats)
 
-    # Return metadata
     return metadata
 
 

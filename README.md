@@ -34,14 +34,14 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected datasets`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
-#### 1. Download raw ATLAS datasets
+#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
+#### 1. Download raw ATLAS dataset
 * Coming soon!
 #### 2. Calculate the 'approximate energy' and select representative structures
 * Coming soon!
-#### 3. Download selected datasets
+#### 3. Download selected dataset
 
-(i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `select_dataset.tar`, and decompress it using:
+(i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `selected_dataset.tar`, and decompress it using:
 ```
 tar -xvf select_dataset.tar
 ```
@@ -51,13 +51,13 @@ python ./data/process_pdb_files.py --pdb_dir ${pdb_dir} --write_dir ${write_dir}
 ```
 then compute node representation and pair representation using ESM-2:
 ```
-python ./data/preprocess.py
+python ./data/cal_repr.py --csv_path ${csv_path}
 ```
 then compute predicted static structure using ESMFold:
 ```
-python ./data/preprocess3.py
+python ./data/cal_static_structure.py --csv_path ${csv_path}
 ```
-(iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './traininng'
+(iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './train_csv'
 
 
 

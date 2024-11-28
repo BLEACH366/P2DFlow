@@ -6,9 +6,13 @@ import numpy as np
 import torch
 import pandas as pd
 import logging
-from omegaconf import DictConfig, OmegaConf
+import argparse
+import random
+import os
 import esm
+import dataclasses
 
+from omegaconf import DictConfig, OmegaConf
 from data import utils as du
 from data.repr import get_pre_repr
 from openfold.data import data_transforms
@@ -19,18 +23,16 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler, dist
 
 from Bio import PDB
-from data import parsers
-import dataclasses
-from data import errors
+from data import parsers, errors
 from data.residue_constants import restype_atom37_mask, order2restype_with_mask
-import random
-import os
+from data.ESMfold_pred import ESMFold_Pred
+
 
 class PdbDataModule(LightningDataModule):
-    def __init__(self):
+    def __init__(self, csv_path):
         super().__init__()
-        self.dataset_cfg = OmegaConf.load('/cluster/home/shiqian/frame-flow-test1/configs/base.yaml').data.dataset
-        # self.dataset_cfg['csv_path'] = '/cluster/home/shiqian/frame-flow/data/test/metadata.csv'
+        self.dataset_cfg = OmegaConf.load('./configs/base.yaml').data.dataset
+        self.dataset_cfg['csv_path'] = csv_path
 
     def setup(self):
         self._train_dataset = PdbDataset(
@@ -41,7 +43,6 @@ class PdbDataModule(LightningDataModule):
 class PdbDataset(Dataset):
     def __init__(
             self,
-            *,
             dataset_cfg,
             is_training,
         ):
@@ -50,7 +51,8 @@ class PdbDataset(Dataset):
         self._dataset_cfg = dataset_cfg
         self.random_seed = self._dataset_cfg.seed
 
-        # Load ESM-2 model
+        # Load ESMFold model
+        self.ESMFold_Pred = ESMFold_Pred()
 
         self.count=0
 
@@ -74,33 +76,35 @@ class PdbDataset(Dataset):
 
         self.csv = pdb_csv.sample(frac=1.0, random_state=self.random_seed).reset_index()
         
-        self.chain_feats_total = [self._process_csv_row(self.csv.iloc[idx]['processed_path']) for idx in range(len(self.csv))]
+        self.chain_feats_total = [self._process_csv_row(self.csv.iloc[idx]) for idx in range(len(self.csv))]
 
         self._log.info(
             f"Training: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
 
-    def _process_csv_row(self, processed_file_path):
+    def _process_csv_row(self, csv_row):
+        processed_file_path = csv_row['processed_path']
+        raw_pdb_file = csv_row['raw_path']
+
         self.count += 1
         if self.count%200==0:
             self._log.info(
                 f"pre_count= {self.count}")
         
         output_total = du.read_pkl(processed_file_path)
-        # if os.path.exists(processed_file_path.replace(".pkl","_esmfold.pkl")):
-        #     print(processed_file_path,"exists")
-        #     return
 
-        work_dir = os.path.join("/cluster/home/shiqian/frame-flow-test1/ATLAS",
-                                        os.path.basename(processed_file_path)[:6])
-        for tempfile in os.listdir(work_dir):
-            if "esm_pred_rmsd" in tempfile:
-                save_path = os.path.join(work_dir, tempfile)
-                break
+
+        save_dir = os.path.join(os.path.dirname(raw_pdb_file), 'ESMFold_Pred_results')
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, os.path.basename(processed_file_path)[:6]+'_esmfold.pdb')
+        if not os.path.exists(save_path):
+            self.ESMFold_Pred.predict_str(self, raw_pdb_file, save_path)
+        print(save_path)
+
 
         metadata = {}
         parser = PDB.PDBParser(QUIET=True)
         structure = parser.get_structure('test', save_path)
-        # os.system("rm -rf "+save_path)
+
         # Extract all chains
         struct_chains = {
             chain.id.upper(): chain
@@ -144,7 +148,7 @@ class PdbDataset(Dataset):
         output_total['trans_esmfold'] = curr_rigid.get_trans().cpu()
         output_total['rotmats_esmfold'] = curr_rigid.get_rots().get_rot_mats().cpu()
 
-        du.write_pkl(processed_file_path,output_total)
+        du.write_pkl(processed_file_path, output_total)
         print(processed_file_path)
 
     def __len__(self):
@@ -155,4 +159,10 @@ class PdbDataset(Dataset):
         return chain_feats
 
 if __name__ == '__main__':
-    res = PdbDataModule().setup()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--csv_path', type=str, default='')
+    args = parser.parse_args()
+
+    csv_path = args.csv_path
+
+    res = PdbDataModule(csv_path).setup()

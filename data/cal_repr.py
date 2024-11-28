@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import pandas as pd
 import logging
+import argparse
 from omegaconf import DictConfig, OmegaConf
 import esm
 
@@ -20,25 +21,21 @@ from torch.utils.data.distributed import DistributedSampler, dist
 
 
 class PdbDataModule(LightningDataModule):
-    def __init__(self):
+    def __init__(self, csv_path):
         super().__init__()
-        self.dataset_cfg = OmegaConf.load('/cluster/home/shiqian/frame-flow-test1/configs/base.yaml').data.dataset
-        # self.dataset_cfg['csv_path'] = '/cluster/home/shiqian/frame-flow/data/test/metadata.csv'
+        self.dataset_cfg = OmegaConf.load('./configs/base.yaml').data.dataset
+        self.dataset_cfg['csv_path'] = csv_path
 
     def setup(self):
         self._train_dataset = PdbDataset(
             dataset_cfg=self.dataset_cfg,
             is_training=True,
         )
-        # self._valid_dataset = PdbDataset(
-        #     dataset_cfg=self.dataset_cfg,
-        #     is_training=False,
-        # )
+
 
 class PdbDataset(Dataset):
     def __init__(
             self,
-            *,
             dataset_cfg,
             is_training,
         ):
@@ -55,12 +52,7 @@ class PdbDataset(Dataset):
         self.model_esm2.eval().cuda(self.device_esm)  # disables dropout for deterministic results
         self.model_esm2.requires_grad_(False)
 
-
-        self.bad_count = 0
-
-
         self._init_metadata()
-        self._rng = np.random.default_rng(seed=self._dataset_cfg.seed)
 
     @property
     def is_training(self):
@@ -76,10 +68,6 @@ class PdbDataset(Dataset):
         # Process CSV with different filtering criterions.
         pdb_csv = pd.read_csv(self.dataset_cfg.csv_path)
         self.raw_csv = pdb_csv
-        # pdb_csv = pdb_csv[pdb_csv.modeled_seq_len <= self.dataset_cfg.max_num_res]
-        # pdb_csv = pdb_csv[pdb_csv.modeled_seq_len >= self.dataset_cfg.min_num_res]
-        # if self.dataset_cfg.subset is not None:
-        #     pdb_csv = pdb_csv.iloc[:self.dataset_cfg.subset]
         pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
 
         ## Training or validation specific logic.
@@ -143,19 +131,19 @@ class PdbDataset(Dataset):
         du.write_pkl(processed_file_path,out)
         print(processed_file_path)
 
-        # merged_df = pd.merge(csv1, csv2, left_on='fn1', right_on='pdb_filename', how='inner')
-
     def __len__(self):
         return len(self.chain_feats_total)
 
     def __getitem__(self, idx):
-        # Sample data example.
-        # csv_row = self.csv.iloc[idx]
-        # processed_file_path = csv_row['processed_path']
-        # chain_feats = self._process_csv_row(processed_file_path)
-        # chain_feats['csv_idx'] = torch.ones(1, dtype=torch.long) * idx
+
         chain_feats = self.chain_feats_total[idx]
         return chain_feats
 
 if __name__ == '__main__':
-    res = PdbDataModule().setup()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--csv_path', type=str, default='')
+    args = parser.parse_args()
+
+    csv_path = args.csv_path
+
+    res = PdbDataModule(csv_path).setup()
