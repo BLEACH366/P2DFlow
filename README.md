@@ -34,7 +34,12 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-#### 1. Download selected datasets
+(tips: If you want to use the data we have preprocessed, please go directly to [section 3](#3.-Download-selected-datasets); if you prefer to process the data from scratch or work with your own data, please start from the beginning.)
+#### 1. Download raw ATLAS datasets
+* Coming soon!
+#### 2. Calculate the 'approximate energy' and select representative structures
+* Coming soon!
+#### 3. Download selected datasets
 
 (i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filename is `select_dataset.tar`, and decompress it using:
 ```
@@ -46,12 +51,7 @@ python -u experiments/train_se3_flows.py
 ```
 (iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './traininng'
 
-#### 2. Download raw ATLAS datasets
 
-(i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filename is `select_dataset.tar`, and decompress it using:
-```
-tar -xvf select_dataset.tar
-```
 
 ## Model weights
 Download the pretrained checkpoint from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `pretrained.ckpt`, and put it into `./weights` folder. You can use the pretrained weight for inference.
