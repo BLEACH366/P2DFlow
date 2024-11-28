@@ -34,7 +34,7 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-##### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected datasets`; if you prefer to process the data from scratch or work with your own data, please start from the beginning.)
+#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected datasets`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
 #### 1. Download raw ATLAS datasets
 * Coming soon!
 #### 2. Calculate the 'approximate energy' and select representative structures
@@ -45,9 +45,17 @@ conda activate P2DFlow
 ```
 tar -xvf select_dataset.tar
 ```
-(ii) Use `./inference_outputs/weights/` to preprocess `.pdb` files and compute node representation and pair representation using ESM-2:
+(ii) Preprocess `.pdb` files to get `.pkl` files:
 ```
-python -u experiments/train_se3_flows.py
+python ./data/process_pdb_files.py --pdb_dir ${pdb_dir} --write_dir ${write_dir}
+```
+then compute node representation and pair representation using ESM-2:
+```
+python ./data/preprocess.py
+```
+then compute predicted static structure using ESMFold:
+```
+python ./data/preprocess3.py
 ```
 (iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './traininng'
 
@@ -60,7 +68,7 @@ Download the pretrained checkpoint from [Google Drive](https://drive.google.com/
 ## Training
 To train P2DFlow, firstly make sure you have prepare the dataset according to `Prepare Dataset` and put it in the right folder, then modify the config file in `./configs/base.yaml`(especially for `csv_path` and `energy_csv_path`). After this, you can run:
 ```
-python -u experiments/train_se3_flows.py
+python experiments/train_se3_flows.py
 ```
 And you will get the checkpoints in `./ckpt`
 
@@ -68,7 +76,7 @@ And you will get the checkpoints in `./ckpt`
 ## Inference
 To infer for specified protein sequence, firstly modify the input .csv file in `./inference/valid_seq.csv` and config file in `./configs/inference.yaml`(especially for `validset_path`), then run:
 ```
-python -u experiments/inference_se3_flows.py
+python experiments/inference_se3_flows.py
 ```
 And you will get the results in `./inference_outputs/weights/`
 
