@@ -41,7 +41,7 @@ conda activate P2DFlow
 * Coming soon!
 #### 3. Download selected datasets
 
-(i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filename is `select_dataset.tar`, and decompress it using:
+(i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `select_dataset.tar`, and decompress it using:
 ```
 tar -xvf select_dataset.tar
 ```
@@ -57,7 +57,7 @@ then compute predicted static structure using ESMFold:
 ```
 python ./data/preprocess3.py
 ```
-(iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/1wm5_rMbemxqMiTxoBr_V-Vt5NyNtdZT7?usp=share_link) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './traininng'
+(iii) Download the `csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training), and put them into './traininng'
 
 
 
