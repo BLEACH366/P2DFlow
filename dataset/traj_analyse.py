@@ -9,7 +9,7 @@ from scipy.stats import gaussian_kde
 import multiprocessing as mp
 
 
-dirpath = "/cluster/home/shiqian/frame-flow-test1/ATLAS/"
+dirpath = "./dataset"
 k=2.32*1e-4  # unit(eV/K)
 T=298.15  # unit(K)
 file_txt = os.path.join(dirpath,'ATLAS_filename.txt')
