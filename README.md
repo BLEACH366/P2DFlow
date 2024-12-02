@@ -34,7 +34,8 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
+#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Get selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
+
 #### 1. Download raw ATLAS dataset
 (i) Download the `Analysis & MDs` dataset from [ATLAS](https://www.dsimb.inserm.fr/ATLAS/), or you can use `./dataset/download.py` by running:
 ```
@@ -54,7 +55,7 @@ And you will get `traj_info.csv`.
 python ./dataset/md_select.py
 ```
 
-#### 3. Download selected dataset
+#### 3. Get selected dataset
 
 (i) Download the selected dataset (or get it from the two steps above) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `selected_dataset.tar`, and decompress it using:
 ```
@@ -87,7 +88,7 @@ Download the pretrained checkpoint from [Google Drive](https://drive.google.com/
 
 
 ## Training
-To train P2DFlow, firstly make sure you have prepare the dataset according to `Prepare Dataset`, and put it in the right folder, then modify the config file in `./configs/base.yaml`(especially for `csv_path` and `energy_csv_path`). After this, you can run:
+To train P2DFlow, firstly make sure you have prepared the dataset according to `Prepare Dataset`, and put it in the right folder, then modify `./configs/base.yaml` (especially for `csv_path` and `energy_csv_path`). After this, you can run:
 ```
 python experiments/train_se3_flows.py
 ```
@@ -95,7 +96,7 @@ And you will get the checkpoints in `./ckpt`.
 
 
 ## Inference
-To infer for specified protein sequence, firstly modify the input `.csv` file (`./inference/valid_seq.csv`) and config file (`./configs/inference.yaml`), then run:
+To infer for specified protein sequence, firstly modify `./inference/valid_seq.csv` and `./configs/inference.yaml` (especially for `validset_path`), then run:
 ```
 python experiments/inference_se3_flows.py
 ```
