@@ -36,9 +36,18 @@ conda activate P2DFlow
 ## Prepare Dataset
 #### (tips: If you want to use the data we have preprocessed, please go directly to `3. Download selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
 #### 1. Download raw ATLAS dataset
-* Coming soon!
-#### 2. Calculate the 'approximate energy' and select representative structures
-* Coming soon!
+(i) Download the `Analysis & MDs` dataset from [ATLAS](https://www.dsimb.inserm.fr/ATLAS/) Or you can use `./dataset/download.py` by running:
+```
+python ./dataset/download.py
+```
+We will use `.pdb` and `.xtc` files for the following calculation.
+
+#### 2. Calculate the `approximate energy` and select representative structures
+(i) Use `gaussian_kde` to calculate the `approximate energy` by running (based on `ATLAS_filename.txt`):
+```
+python ./dataset/traj_analyse.py
+```
+  
 #### 3. Download selected dataset
 
 (i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `selected_dataset.tar`, and decompress it using:
