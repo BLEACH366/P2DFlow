@@ -1,10 +1,12 @@
 import os
 import multiprocessing as mp
 
-data_dir = "/cluster/home/shiqian/frame-flow-test1/ATLAS"
+data_dir = "./dataset"
 file_txt = os.path.join(data_dir,'ATLAS_filename.txt')
 url_base = "https://www.dsimb.inserm.fr/ATLAS/api/ATLAS/analysis/"
 num_processes = 48
+
+os.makedirs(data_dir, exist_ok=True)
 
 with open(file_txt,'r+') as f:
     file_cont = f.read()
