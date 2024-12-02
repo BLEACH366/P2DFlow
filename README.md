@@ -47,7 +47,8 @@ We will use `.pdb` and `.xtc` files for the following calculation.
 ```
 python ./dataset/traj_analyse.py
 ```
-And you will get `traj_info.csv`
+And you will get `traj_info.csv`.
+
 (ii) Select representative structures at equal intervals based on the 'approximate energy':
 ```
 python ./dataset/md_select.py
@@ -63,12 +64,13 @@ tar -xvf select_dataset.tar
 ```
 python ./data/process_pdb_files.py --pdb_dir ${pdb_dir} --write_dir ${write_dir}
 ```
-And you will get `metadata.csv`
-then compute node representation and pair representation using ESM-2:
+And you will get `metadata.csv`.
+
+then compute node representation and pair representation using ESM-2 (`csv_path` is the path of `metadata.csv`):
 ```
 python ./data/cal_repr.py --csv_path ${csv_path}
 ```
-then compute predicted static structure using ESMFold:
+then compute predicted static structure using ESMFold (`csv_path` is the path of `metadata.csv`):
 ```
 python ./data/cal_static_structure.py --csv_path ${csv_path}
 ```
