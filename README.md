@@ -95,7 +95,7 @@ And you will get the checkpoints in `./ckpt`.
 
 
 ## Inference
-To infer for specified protein sequence, firstly modify the input .csv file in `./inference/valid_seq.csv` and config file in `./configs/inference.yaml`(especially for `validset_path`), then run:
+To infer for specified protein sequence, firstly modify the input `.csv` file (`./inference/valid_seq.csv`) and config file (`./configs/inference.yaml`), then run:
 ```
 python experiments/inference_se3_flows.py
 ```
@@ -103,8 +103,18 @@ And you will get the results in `./inference_outputs/weights/`.
 
 
 ## Evaluation
-* Coming soon!
-
+To evaluate metrics related to fidelity and dynamics, specify paths in `./analysis/eval_test.py`, then run:
+```
+python ./analysis/eval_test.py
+```
+To evaluate PCA, specify paths in `./analysis/pca_analyse.py`, then run:
+```
+python ./analysis/pca_analyse.py
+```
+To draw the ramachandran plots, specify paths in `./analysis/Ramachandran_plot.py`, then run:
+```
+python ./analysis/Ramachandran_plot.py
+```
 
 ## License
 This project is licensed under the terms of the GPL-3.0 license.
