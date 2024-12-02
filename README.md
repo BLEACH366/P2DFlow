@@ -75,7 +75,9 @@ then compute predicted static structure using ESMFold (`csv_path` is the path of
 python ./data/cal_static_structure.py --csv_path ${csv_path}
 ```
 (iii) Provide the necessary `.csv` files for training
+
 If you are using the data we have preprocessed, download the `.csv` files from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filenames are `train_dataset.csv` and `train_dataset_energy.csv`(they correspond to `csv_path` and `energy_csv_path` in `./configs/base.yaml` during training).
+
 Or if you are using your own data, you can get `metadata.csv` from step 3 (correspond to `csv_path` in `./configs/base.yaml` during training, and you need to split a subset from it as the train dataset), and get `traj_info.csv` from step 2 (correspond to `energy_csv_path`).
 
 
