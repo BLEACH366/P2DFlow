@@ -9,7 +9,7 @@ import random
 import pandas as pd
 import multiprocessing as mp
 
-data_dir = "/cluster/home/shiqian/frame-flow-test1/ATLAS"
+data_dir = "./dataset"
 output_dir = os.path.join(data_dir,"select")
 num_processes = 48
 file_txt = os.path.join(data_dir,'ATLAS_filename.txt')
