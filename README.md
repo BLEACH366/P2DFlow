@@ -42,12 +42,16 @@ python ./dataset/download.py
 ```
 We will use `.pdb` and `.xtc` files for the following calculation.
 
-#### 2. Calculate the `approximate energy` and select representative structures
-(i) Use `gaussian_kde` to calculate the `approximate energy` by running (based on `ATLAS_filename.txt`):
+#### 2. Calculate the 'approximate energy and select representative structures
+(i) Use `gaussian_kde` to calculate the 'approximate energy':
 ```
 python ./dataset/traj_analyse.py
 ```
-  
+(ii) Select representative structures at equal intervals based on the 'approximate energy':
+```
+python ./dataset/md_select.py
+```
+
 #### 3. Download selected dataset
 
 (i) Download the selected dataset (you can find the way that we select the dataset from ATLAS according to part 2.2 and part 3.1 in our papar) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `selected_dataset.tar`, and decompress it using:
