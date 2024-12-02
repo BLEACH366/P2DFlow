@@ -1,5 +1,6 @@
 import sys
-from analysis.src.eval import evaluate_prediction
+sys.path.append('./analysis')
+from src.eval import evaluate_prediction
 
 if __name__ == '__main__':
     # pred_dir = '/cluster/home/shiqian/frame-flow-test1/valid/evaluate/Str2Str_pred'
