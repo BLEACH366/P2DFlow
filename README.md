@@ -34,7 +34,7 @@ conda activate P2DFlow
 ```
 
 ## Prepare Dataset
-#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Get selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
+#### (tips: If you want to use the data we have preprocessed, please go directly to `3. Process selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
 
 #### 1. Download raw ATLAS dataset
 (i) Download the `Analysis & MDs` dataset from [ATLAS](https://www.dsimb.inserm.fr/ATLAS/), or you can use `./dataset/download.py` by running:
@@ -55,7 +55,7 @@ And you will get `traj_info.csv`.
 python ./dataset/md_select.py
 ```
 
-#### 3. Get selected dataset
+#### 3. Process selected dataset
 
 (i) Download the selected dataset (or get it from the two steps above) from [Google Drive](https://drive.google.com/drive/folders/11mdVfMi2rpVn7nNG2mQAGA5sNXCKePZj?usp=sharing) whose filename is `selected_dataset.tar`, and decompress it using:
 ```
