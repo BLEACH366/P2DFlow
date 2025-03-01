@@ -33,8 +33,8 @@ class ESMFold_Pred():
             print(count,seq)
             count += 1
         
-        if len(seq) > max_seq_len:
-            continue
+        # if len(seq) > max_seq_len:
+        #     return
 
         with torch.no_grad():
             output = self._folding_model.infer_pdb(seq)
