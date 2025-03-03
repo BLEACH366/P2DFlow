@@ -44,7 +44,7 @@ python ./dataset/download.py
 We will use `.pdb` and `.xtc` files for the following calculation.
 
 #### 2. Calculate the 'approximate energy and select representative structures
-(i) Use `gaussian_kde` to calculate the 'approximate energy' (You need to put all files above in `./dataset`, include `ATLAS_filename.txt` for filename of all proteins):
+(i) Use `gaussian_kde` to calculate the 'approximate energy' (You need to put all files above in `./dataset`, include `ATLAS_filename.txt` for filenames of all proteins):
 ```
 python ./dataset/traj_analyse.py
 ```
