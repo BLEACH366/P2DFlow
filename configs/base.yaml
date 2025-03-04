@@ -3,7 +3,7 @@ data:
   dataset:
     seed: 123
     use_rotate_enhance: False
-    split_frac: 1.0  # 1.0 for no validation seperate
+    split_frac: 0.95  # 1.0 for no validation seperate
     use_split: True  # whether cut the sequence to slices
     split_len: 328
     min_num_res: 32
