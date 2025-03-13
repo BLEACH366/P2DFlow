@@ -4,12 +4,12 @@ from typing import *
 import numpy as np
 import torch
 from scipy.spatial import distance
-from deeptime.decomposition import TICA
+# from deeptime.decomposition import TICA
 from src.common.geo_utils import rmsd, _find_rigid_alignment, squared_deviation
 from scipy.linalg import fractional_matrix_power
 from sklearn.mixture import GaussianMixture
 from Bio.PDB import PDBParser
-import freesasa
+# import freesasa
 from Bio.PDB.Polypeptide import PPBuilder
 import multiprocessing as mp
 
@@ -216,73 +216,73 @@ def js_pwd(ca_coords_dict, ref_key='target', n_bins=50, pwd_offset=3, weights=No
     results = {k: np.around(v, decimals=4) for k, v in results.items()}
     return results
 
-def js_tica(ca_coords_dict, ref_key='target', n_bins=50, lagtime=20, return_tic=True, weights=None):
-    # n_bins = 50 follows idpGAN
-    ca_pwd = {
-        k: pairwise_distance_ca(v) for k, v in ca_coords_dict.items()
-    }   # (B, D)
+# def js_tica(ca_coords_dict, ref_key='target', n_bins=50, lagtime=20, return_tic=True, weights=None):
+#     # n_bins = 50 follows idpGAN
+#     ca_pwd = {
+#         k: pairwise_distance_ca(v) for k, v in ca_coords_dict.items()
+#     }   # (B, D)
     
-    print('tica1', ca_pwd[ref_key].shape)
-    estimator = TICA(dim=2, lagtime=lagtime).fit(ca_pwd[ref_key])
-    print('tica2')
-    tica = estimator.fetch_model()
-    # dimension reduction into 2D
-    ca_dr2d = {  
-        k: tica.transform(v) for k, v in ca_pwd.items()
-    }
-    if weights is None: weights = {}
-    weights.update({k: np.ones(len(v)) for k,v in ca_coords_dict.items() if k not in weights})
+#     print('tica1', ca_pwd[ref_key].shape)
+#     estimator = TICA(dim=2, lagtime=lagtime).fit(ca_pwd[ref_key])
+#     print('tica2')
+#     tica = estimator.fetch_model()
+#     # dimension reduction into 2D
+#     ca_dr2d = {  
+#         k: tica.transform(v) for k, v in ca_pwd.items()
+#     }
+#     if weights is None: weights = {}
+#     weights.update({k: np.ones(len(v)) for k,v in ca_coords_dict.items() if k not in weights})
     
-    d_min = ca_dr2d[ref_key].min(axis=0) # (D, )
-    d_max = ca_dr2d[ref_key].max(axis=0)
-    ca_dr2d_binned = {
-        k: np.apply_along_axis(lambda a: np.histogram(a[:-2], bins=n_bins, weights=weights[k], range=(a[-2], a[-1]))[0]+PSEUDO_C, 0, 
-                            np.concatenate([v, d_min[None], d_max[None]], axis=0))
-                for k, v in ca_dr2d.items()
-    }   # (N_bins, 2) 
-    results = {k: distance.jensenshannon(v, ca_dr2d_binned[ref_key], axis=0).mean() 
-                for k, v in ca_dr2d_binned.items() if k != ref_key}
-    results[ref_key] = 0.0
-    results = {k: np.around(v, decimals=4) for k, v in results.items()}
-    if return_tic:
-        return results, ca_dr2d
-    return results
+#     d_min = ca_dr2d[ref_key].min(axis=0) # (D, )
+#     d_max = ca_dr2d[ref_key].max(axis=0)
+#     ca_dr2d_binned = {
+#         k: np.apply_along_axis(lambda a: np.histogram(a[:-2], bins=n_bins, weights=weights[k], range=(a[-2], a[-1]))[0]+PSEUDO_C, 0, 
+#                             np.concatenate([v, d_min[None], d_max[None]], axis=0))
+#                 for k, v in ca_dr2d.items()
+#     }   # (N_bins, 2) 
+#     results = {k: distance.jensenshannon(v, ca_dr2d_binned[ref_key], axis=0).mean() 
+#                 for k, v in ca_dr2d_binned.items() if k != ref_key}
+#     results[ref_key] = 0.0
+#     results = {k: np.around(v, decimals=4) for k, v in results.items()}
+#     if return_tic:
+#         return results, ca_dr2d
+#     return results
 
-def js_tica_pos(ca_coords_dict, ref_key='target', n_bins=50, lagtime=20, return_tic=True, weights=None):
-    # n_bins = 50 follows idpGAN
-    v_ref  = torch.as_tensor(ca_coords_dict['target'][0])
-    for k, v in ca_coords_dict.items():
-        v = torch.as_tensor(v)
-        for idx in range(v.shape[0]):
-            R, t = _find_rigid_alignment(v[idx], v_ref)
-            v[idx] = (torch.matmul(R, v[idx].transpose(-2, -1))).transpose(-2, -1) + t.unsqueeze(0)
-        ca_coords_dict[k] = v.numpy()
+# def js_tica_pos(ca_coords_dict, ref_key='target', n_bins=50, lagtime=20, return_tic=True, weights=None):
+#     # n_bins = 50 follows idpGAN
+#     v_ref  = torch.as_tensor(ca_coords_dict['target'][0])
+#     for k, v in ca_coords_dict.items():
+#         v = torch.as_tensor(v)
+#         for idx in range(v.shape[0]):
+#             R, t = _find_rigid_alignment(v[idx], v_ref)
+#             v[idx] = (torch.matmul(R, v[idx].transpose(-2, -1))).transpose(-2, -1) + t.unsqueeze(0)
+#         ca_coords_dict[k] = v.numpy()
 
-    ca_pos = { k: v.reshape(v.shape[0],-1) for k, v in ca_coords_dict.items()}   # (B, 3*N)
+#     ca_pos = { k: v.reshape(v.shape[0],-1) for k, v in ca_coords_dict.items()}   # (B, 3*N)
     
-    estimator = TICA(dim=2, lagtime=lagtime).fit(ca_pos[ref_key])
-    tica = estimator.fetch_model()
-    # dimension reduction into 2D
-    ca_dr2d = {  
-        k: tica.transform(v) for k, v in ca_pos.items()
-    }
-    if weights is None: weights = {}
-    weights.update({k: np.ones(len(v)) for k,v in ca_coords_dict.items() if k not in weights})
+#     estimator = TICA(dim=2, lagtime=lagtime).fit(ca_pos[ref_key])
+#     tica = estimator.fetch_model()
+#     # dimension reduction into 2D
+#     ca_dr2d = {  
+#         k: tica.transform(v) for k, v in ca_pos.items()
+#     }
+#     if weights is None: weights = {}
+#     weights.update({k: np.ones(len(v)) for k,v in ca_coords_dict.items() if k not in weights})
     
-    d_min = ca_dr2d[ref_key].min(axis=0) # (D, )
-    d_max = ca_dr2d[ref_key].max(axis=0)
-    ca_dr2d_binned = {
-        k: np.apply_along_axis(lambda a: np.histogram(a[:-2], bins=n_bins, weights=weights[k], range=(a[-2], a[-1]))[0]+PSEUDO_C, 0, 
-                            np.concatenate([v, d_min[None], d_max[None]], axis=0))
-                for k, v in ca_dr2d.items()
-    }   # (N_bins, 2) 
-    results = {k: distance.jensenshannon(v, ca_dr2d_binned[ref_key], axis=0).mean() 
-                for k, v in ca_dr2d_binned.items() if k != ref_key}
-    results[ref_key] = 0.0
-    results = {k: np.around(v, decimals=4) for k, v in results.items()}
-    if return_tic:
-        return results, ca_dr2d
-    return results
+#     d_min = ca_dr2d[ref_key].min(axis=0) # (D, )
+#     d_max = ca_dr2d[ref_key].max(axis=0)
+#     ca_dr2d_binned = {
+#         k: np.apply_along_axis(lambda a: np.histogram(a[:-2], bins=n_bins, weights=weights[k], range=(a[-2], a[-1]))[0]+PSEUDO_C, 0, 
+#                             np.concatenate([v, d_min[None], d_max[None]], axis=0))
+#                 for k, v in ca_dr2d.items()
+#     }   # (N_bins, 2) 
+#     results = {k: distance.jensenshannon(v, ca_dr2d_binned[ref_key], axis=0).mean() 
+#                 for k, v in ca_dr2d_binned.items() if k != ref_key}
+#     results[ref_key] = 0.0
+#     results = {k: np.around(v, decimals=4) for k, v in results.items()}
+#     if return_tic:
+#         return results, ca_dr2d
+#     return results
 
 def js_rg(ca_coords_dict, ref_key='target', n_bins=50, weights=None):
     ca_rg = {
@@ -482,69 +482,69 @@ def pro_t_contacts(ca_coords_dict, cry_ca_coords, dist_threshold = 8.0, percent_
 
     return result
 
-def pro_c_contacts(target_file, pred_file, cry_target_file, area_threshold = 2.0, percent_threshold = 0.1):
-    result = {}
-    c_contacts_total = {}
+# def pro_c_contacts(target_file, pred_file, cry_target_file, area_threshold = 2.0, percent_threshold = 0.1):
+#     result = {}
+#     c_contacts_total = {}
 
-    parser = PDBParser()
-    params = freesasa.Parameters({'algorithm': 'ShrakeRupley', 'probe-radius': 2.8})
+#     parser = PDBParser()
+#     params = freesasa.Parameters({'algorithm': 'ShrakeRupley', 'probe-radius': 2.8})
     
-    structure_cry_target = parser.get_structure('cry_target', cry_target_file)
-    str_params = {'separate-chains': False, 'separate-models': True}
-    structure_target = freesasa.structureArray(target_file,str_params)
-    structure_pred = freesasa.structureArray(pred_file,str_params)
+#     structure_cry_target = parser.get_structure('cry_target', cry_target_file)
+#     str_params = {'separate-chains': False, 'separate-models': True}
+#     structure_target = freesasa.structureArray(target_file,str_params)
+#     structure_pred = freesasa.structureArray(pred_file,str_params)
 
 
-    structure_cry_target = freesasa.structureFromBioPDB(structure_cry_target)
-    sasa = freesasa.calc(structure_cry_target,params)
-    residue_sasa = sasa.residueAreas()
+#     structure_cry_target = freesasa.structureFromBioPDB(structure_cry_target)
+#     sasa = freesasa.calc(structure_cry_target,params)
+#     residue_sasa = sasa.residueAreas()
 
-    c_contacts_crystall = []
-    # 打印每个残基的 SASA
-    for chain_id in residue_sasa:
-        for residue_id in residue_sasa[chain_id]:
-            # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
-            c_contacts_crystall.append(residue_sasa[chain_id][residue_id].total < area_threshold)
-    c_contacts_crystall = torch.tensor(c_contacts_crystall)
+#     c_contacts_crystall = []
+#     # 打印每个残基的 SASA
+#     for chain_id in residue_sasa:
+#         for residue_id in residue_sasa[chain_id]:
+#             # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
+#             c_contacts_crystall.append(residue_sasa[chain_id][residue_id].total < area_threshold)
+#     c_contacts_crystall = torch.tensor(c_contacts_crystall)
 
-    c_contacts_target = 0
-    count = 0
-    for structure_temp in structure_target:
-        count += 1
-        sasa = freesasa.calc(structure_temp,params)
-        residue_sasa = sasa.residueAreas()
+#     c_contacts_target = 0
+#     count = 0
+#     for structure_temp in structure_target:
+#         count += 1
+#         sasa = freesasa.calc(structure_temp,params)
+#         residue_sasa = sasa.residueAreas()
 
-        c_contacts_temp = []
-        # 打印每个残基的 SASA
-        for chain_id in residue_sasa:
-            for residue_id in residue_sasa[chain_id]:
-                # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
-                c_contacts_temp.append(residue_sasa[chain_id][residue_id].total > area_threshold)
-        c_contacts_temp = torch.tensor(c_contacts_temp).type(torch.float32)
-        c_contacts_target += c_contacts_temp
-    c_contacts_target = c_contacts_target / count
-    c_contacts_total['target'] = (c_contacts_target > percent_threshold) & c_contacts_crystall
+#         c_contacts_temp = []
+#         # 打印每个残基的 SASA
+#         for chain_id in residue_sasa:
+#             for residue_id in residue_sasa[chain_id]:
+#                 # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
+#                 c_contacts_temp.append(residue_sasa[chain_id][residue_id].total > area_threshold)
+#         c_contacts_temp = torch.tensor(c_contacts_temp).type(torch.float32)
+#         c_contacts_target += c_contacts_temp
+#     c_contacts_target = c_contacts_target / count
+#     c_contacts_total['target'] = (c_contacts_target > percent_threshold) & c_contacts_crystall
 
 
-    c_contacts_pred = 0
-    count = 0
-    for structure_temp in structure_pred:
-        count += 1
-        sasa = freesasa.calc(structure_temp,params)
-        residue_sasa = sasa.residueAreas()
+#     c_contacts_pred = 0
+#     count = 0
+#     for structure_temp in structure_pred:
+#         count += 1
+#         sasa = freesasa.calc(structure_temp,params)
+#         residue_sasa = sasa.residueAreas()
 
-        c_contacts_temp = []
-        # 打印每个残基的 SASA
-        for chain_id in residue_sasa:
-            for residue_id in residue_sasa[chain_id]:
-                # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
-                c_contacts_temp.append(residue_sasa[chain_id][residue_id].total > area_threshold)
-        c_contacts_temp = torch.tensor(c_contacts_temp).type(torch.float32)
-        c_contacts_pred += c_contacts_temp
-    c_contacts_pred = c_contacts_pred / count
-    c_contacts_total['pred'] = (c_contacts_pred > percent_threshold) & c_contacts_crystall
+#         c_contacts_temp = []
+#         # 打印每个残基的 SASA
+#         for chain_id in residue_sasa:
+#             for residue_id in residue_sasa[chain_id]:
+#                 # print(f"Chain {chain_id}, Residue {residue_id}: {residue_sasa[chain_id][residue_id].residueType}, area: {residue_sasa[chain_id][residue_id].total}")
+#                 c_contacts_temp.append(residue_sasa[chain_id][residue_id].total > area_threshold)
+#         c_contacts_temp = torch.tensor(c_contacts_temp).type(torch.float32)
+#         c_contacts_pred += c_contacts_temp
+#     c_contacts_pred = c_contacts_pred / count
+#     c_contacts_total['pred'] = (c_contacts_pred > percent_threshold) & c_contacts_crystall
 
-    jac_w_contacts = torch.sum(c_contacts_total['target'] & c_contacts_total['pred'])/torch.sum(c_contacts_total['target'] | c_contacts_total['pred'])
-    result['pred'] = np.around(float(jac_w_contacts), decimals=4)
-    # print(jac_w_contacts)
-    return result
+#     jac_w_contacts = torch.sum(c_contacts_total['target'] & c_contacts_total['pred'])/torch.sum(c_contacts_total['target'] | c_contacts_total['pred'])
+#     result['pred'] = np.around(float(jac_w_contacts), decimals=4)
+#     # print(jac_w_contacts)
+#     return result

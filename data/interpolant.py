@@ -7,8 +7,6 @@ from data import all_atom
 import copy
 from scipy.optimize import linear_sum_assignment
 
-ADD_NOISE = True
-NOISE_SCHEDULE = 5.0
 
 def _centered_gaussian(num_batch, num_res, device):
     noise = torch.randn(num_batch, num_res, 3, device=device)
@@ -38,6 +36,7 @@ class Interpolant:
         self._rots_cfg = cfg.rots
         self._trans_cfg = cfg.trans
         self._sample_cfg = cfg.sampling
+        self.add_noise = cfg.add_noise
         self._igso3 = None
 
     @property
@@ -58,14 +57,14 @@ class Interpolant:
 
     def _esmfold_gaussian(self, num_batch, num_res, device, trans_esmfold):
         noise = torch.randn(num_batch, num_res, 3, device=device)  # (B,L,3)
-        noise = NOISE_SCHEDULE * noise + trans_esmfold
+        noise = self._trans_cfg.noise_scale * noise + trans_esmfold
         return noise - torch.mean(noise, dim=-2, keepdims=True)
 
     def _corrupt_trans(self, trans_1, t, res_mask, trans_esmfold):
         # trans_nm_0 = _centered_gaussian(*res_mask.shape, self._device)
         # trans_0 = trans_nm_0 * du.NM_TO_ANG_SCALE
 
-        if ADD_NOISE:
+        if self.add_noise:
             trans_0 = self._esmfold_gaussian(*res_mask.shape, self._device, trans_esmfold)
         else:
             trans_0 = trans_esmfold
@@ -102,7 +101,7 @@ class Interpolant:
     def _esmfold_igso3(self, res_mask, rotmats_esmfold):
         num_batch, num_res = res_mask.shape
         noisy_rotmats = self.igso3.sample(
-            torch.tensor([1.5]),
+            torch.tensor([self._rots_cfg.noise_scale]),
             num_batch*num_res
         ).to(self._device)
         noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
@@ -120,7 +119,7 @@ class Interpolant:
         # rotmats_0 = torch.einsum(
         #     "...ij,...jk->...ik", rotmats_1, noisy_rotmats)
         
-        if ADD_NOISE:
+        if self.add_noise:
             rotmats_0 = self._esmfold_igso3(res_mask, rotmats_esmfold)
         else:
             rotmats_0 = rotmats_esmfold
@@ -211,7 +210,7 @@ class Interpolant:
         # rotmats_0 = _uniform_so3(num_batch, num_res, self._device)
 
 
-        if ADD_NOISE:
+        if self.add_noise:
             trans_0 = self._esmfold_gaussian(*res_mask.shape, self._device, batch['trans_esmfold'])
             rotmats_0 = self._esmfold_igso3(res_mask, batch['rotmats_esmfold'])
         else:

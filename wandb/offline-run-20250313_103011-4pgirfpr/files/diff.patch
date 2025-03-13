@@ -1,0 +1,2094 @@
+diff --git a/configs/base.yaml b/configs/base.yaml
+index aadec52..8cc27fc 100644
+--- a/configs/base.yaml
++++ b/configs/base.yaml
+@@ -3,9 +3,9 @@ data:
+   dataset:
+     seed: 123
+     use_rotate_enhance: False
+-    split_frac: 0.95  # 1.0 for no validation seperate
++    split_frac: 1.0  # 1.0 means all data except validation set is used for training
+     use_split: True  # whether cut the sequence to slices
+-    split_len: 328
++    split_len: 600  # 328
+     min_num_res: 32
+     max_num_res: 2000
+     cache_num_res: 0
+@@ -14,30 +14,32 @@ data:
+     num_eval_lengths: 32
+     max_eval_length: 2000
+     max_valid_num: 50
+-    csv_path: ./ATLAS/select/pkl/metadata_esm_3A.csv
+-    energy_csv_path: ./ATLAS/select/traj_info.csv
++    csv_path: ./dataset/ATLAS/select/pkl/metadata_merged.csv
+   loader:
+-    num_workers: 2
++    num_workers: 8
+     prefetch_factor: 10
+   sampler:
+     max_batch_size: 64
+-    max_num_res_squared: 500000
++    max_num_res_squared: 500000  # dynamic batch size
+     use_batch_repeats: false
+     num_batches: null
+ 
+ interpolant:
+-  min_t: 0.1
++  min_t: 0.01
+   separate_t: true
+   provide_kappa: true
+   hierarchical_t: false
++  add_noise: True
+   rots:
+     train_schedule: linear
+     sample_schedule: exp
+     exp_rate: 10
++    noise_scale: 1.5
+   trans:
+     batch_ot: true
+     train_schedule: linear
+     sample_schedule: linear
++    noise_scale: 10.0    # noise for esmfold_pred to get prior
+     sample_temp: 1.0
+     vpsde_bmin: 0.1
+     vpsde_bmax: 20.0
+@@ -47,11 +49,15 @@ interpolant:
+   self_condition: ${model.edge_features.self_condition}
+ 
+ model:
+-  dropout: 0.2
++  dropout: 0.2   # 0.2
+   node_embed_size: 256
+   edge_embed_size: 128
+   symmetric: False
+-  use_adapter_node: True   # This is overwritten by _init_ of FlowModel
++  use_torsions: True
++  use_adapter_node: True
++  use_mid_bb_update: False
++  use_mid_bb_update_e3: False
++  use_e3_transformer: False
+   node_features:
+     c_s: ${model.node_embed_size}
+     c_pos_emb: 1280
+@@ -90,7 +96,7 @@ model:
+ experiment:
+   debug: False
+   seed: 123
+-  num_devices: 8
++  num_devices: 1
+   # warm_start: ./weights/esm_egf4.ckpt
+   warm_start: null
+   warm_start_cfg_override: True
+@@ -102,38 +108,37 @@ experiment:
+     permute: False
+   training:
+     min_plddt_mask: null
+-    loss: se3_vf_loss
+-    bb_atom_scale: 0.1
+-    trans_scale: 0.1
+-    translation_loss_weight: 2.0
+     t_normalize_clip: 0.9
+-    rotation_loss_weights: 1.0
++    loss: se3_vf_loss
++    # trans_scale: 0.1
++    translation_loss_weight: 0.2
++    rotation_loss_weights: 1.0  # 1.0
++    bb_atom_scale: 0.1  # 0.1
+     aux_loss_weight: 1.0  # 1.0
+     aux_loss_t_pass: 0.25
+     aatype_loss_weight: 0.0
+   wandb:
+-    name: base
++    name: loss_full
+     project: P2DFlow
+     save_code: True
+     tags: []
+   optimizer:
+-    # lr: 5e-5
+-    lr: 1e-4
++    lr: 1e-4   # 1e-4
+   trainer:
+     overfit_batches: 0
+     min_epochs: 1 # prevents early stopping
+-    max_epochs: 50000
++    max_epochs: 2000
+     accelerator: gpu
+     log_every_n_steps: 1
+     deterministic: False
+     # strategy: ddp
+     strategy: ddp_find_unused_parameters_true
+-    check_val_every_n_epoch: 2
++    check_val_every_n_epoch: 1
+     accumulate_grad_batches: 2
+     gradient_clip_val: 10
+   checkpointer:
+     dirpath: ckpt/${experiment.wandb.project}/${experiment.wandb.name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+     save_last: True
+-    save_top_k: 5
++    save_top_k: 2000
+     monitor: valid/rmsd_loss
+     mode: min
+diff --git a/configs/inference.yaml b/configs/inference.yaml
+index 1a39653..86793d8 100644
+--- a/configs/inference.yaml
++++ b/configs/inference.yaml
+@@ -1,36 +1,15 @@
+-# Configuration for inference on SE(3) diffusion experiments.
+-defaults:
+-  - base
+-  - _self_
+-
+ inference:
+-
+   # Use this to write with date-time stamp.
+   name: ${now:%Y-%m-%d}_${now:%H-%M}
+   seed: 123
+-  ckpt_path: weights/esm_pretrained.ckpt
+-  pmpnn_dir: ./ProteinMPNN/s
++  ckpt_path: ./weights/pretrained.ckpt
+   output_dir: inference_outputs/
+-
+   use_gpu: True
+   num_gpus: 1
+ 
+-  interpolant:
+-    min_t: 0.01
+-    rots:
+-      corrupt: True
+-      sample_schedule: exp
+-      exp_rate: 10
+-    trans:
+-      corrupt: True
+-      sample_schedule: linear
+-    sampling:
+-      num_timesteps: 100
+-    self_condition: True
+-
+   samples:
+     validset_path: ./inference/valid_seq.csv
+     esm_savepath: ${inference.output_dir}
+-    sample_num: 10
++    sample_num: 250
+     sample_batch: 5
+ 
+diff --git a/data/ESMfold_pred.py b/data/ESMfold_pred.py
+index fb50848..3782f88 100644
+--- a/data/ESMfold_pred.py
++++ b/data/ESMfold_pred.py
+@@ -1,61 +1,35 @@
+-import os
+-import MDAnalysis as mda
+-from MDAnalysis.analysis import align
+-import numpy as np
+-import seaborn as sns
+ import esm
+-from Bio import SeqIO
+-import os
+-import re
+-import warnings
+ import torch
+-import pandas as pd
+ 
++from Bio import SeqIO
+ 
+ class ESMFold_Pred():
+-    def __init__(self):
+-        self.device_esm='cuda:0'
++    def __init__(self, device):
+         self._folding_model = esm.pretrained.esmfold_v1().eval()
+         self._folding_model.requires_grad_(False)
+-        self._folding_model.to(self.device_esm)
+-
+-    def predict_str(self, pdbfile, save_path, max_seq_len = 800):
+-        # result = {
+-        #     'file':[],
+-        #     'rmsd':[],         
+-        #             }
++        self._folding_model.to(device)
+ 
++    def predict_str(self, pdbfile, save_path, max_seq_len = 1500):
+         seq_record = SeqIO.parse(pdbfile, "pdb-atom")
+         count = 0
++        seq_list = []
+         for record in seq_record:
+             seq = str(record.seq)
+             # seq = seq.replace("X","")
+-            print(count,seq)
+-            count += 1
+-        
+-        # if len(seq) > max_seq_len:
+-        #     return
+ 
+-        with torch.no_grad():
+-            output = self._folding_model.infer_pdb(seq)
++            if len(seq) > max_seq_len:
++                continue
+ 
+-        with open(save_path, "w") as f:
+-            f.write(output)
+-
+-        # u_ref = mda.Universe(pdbfile)
+-        # protein_ref = u_ref.select_atoms('protein')
+-        # bb_atom_ref = protein_ref.select_atoms('name CA or name C or name N')
+-
+-        # u_esmfold = mda.Universe(save_path)
+-        # protein_esmfold = u_esmfold.select_atoms('protein')
+-        # bb_atom_esmfold = protein_esmfold.select_atoms('name CA or name C or name N')
+-
+-        # rmsd = align.alignto(bb_atom_esmfold, bb_atom_ref, select='all', match_atoms=False)[-1]
+-        # string_temp = f"_rmsd_{rmsd}"
+-        # string_temp = os.path.join(save_dir, 'esm_pred'+string_temp+'.pdb')
+-        # os.system(f"mv {save_path} {string_temp}")
+-        # result['file'].append(file)
+-        # result['rmsd'].append(rmsd)
++            print(f'seq {count}:',seq)
++            seq_list.append(seq)
++            count += 1
++        
++        for idx, seq in enumerate(seq_list):
++            with torch.no_grad():
++                output = self._folding_model.infer_pdb(seq)
++            with open(save_path, "w+") as f:
++                f.write(output)
++            break  # only infer for the first seq
+ 
+ 
+ 
+diff --git a/data/__pycache__/interpolant.cpython-310.pyc b/data/__pycache__/interpolant.cpython-310.pyc
+index e8fa6ce..414afb8 100644
+Binary files a/data/__pycache__/interpolant.cpython-310.pyc and b/data/__pycache__/interpolant.cpython-310.pyc differ
+diff --git a/data/__pycache__/pdb_dataloader.cpython-310.pyc b/data/__pycache__/pdb_dataloader.cpython-310.pyc
+index 18f02ea..8d86421 100644
+Binary files a/data/__pycache__/pdb_dataloader.cpython-310.pyc and b/data/__pycache__/pdb_dataloader.cpython-310.pyc differ
+diff --git a/data/cal_repr.py b/data/cal_repr.py
+deleted file mode 100644
+index 4fde78f..0000000
+--- a/data/cal_repr.py
++++ /dev/null
+@@ -1,149 +0,0 @@
+-"""PDB data loader."""
+-import math
+-import torch
+-import tree
+-import numpy as np
+-import torch
+-import pandas as pd
+-import logging
+-import argparse
+-from omegaconf import DictConfig, OmegaConf
+-import esm
+-
+-from data import utils as du
+-from data.repr import get_pre_repr
+-from openfold.data import data_transforms
+-from openfold.utils import rigid_utils
+-
+-from pytorch_lightning import LightningDataModule
+-from torch.utils.data import DataLoader, Dataset
+-from torch.utils.data.distributed import DistributedSampler, dist
+-
+-
+-class PdbDataModule(LightningDataModule):
+-    def __init__(self, csv_path):
+-        super().__init__()
+-        self.dataset_cfg = OmegaConf.load('./configs/base.yaml').data.dataset
+-        self.dataset_cfg['csv_path'] = csv_path
+-
+-    def setup(self):
+-        self._train_dataset = PdbDataset(
+-            dataset_cfg=self.dataset_cfg,
+-            is_training=True,
+-        )
+-
+-
+-class PdbDataset(Dataset):
+-    def __init__(
+-            self,
+-            dataset_cfg,
+-            is_training,
+-        ):
+-        self._log = logging.getLogger(__name__)
+-        self._is_training = is_training
+-        self._dataset_cfg = dataset_cfg
+-        self.random_seed = self._dataset_cfg.seed
+-
+-        # Load ESM-2 model
+-        self.count=0
+-        self.device_esm=f'cuda:{torch.cuda.current_device()}'
+-        self.model_esm2, self.alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+-        self.batch_converter = self.alphabet.get_batch_converter()
+-        self.model_esm2.eval().cuda(self.device_esm)  # disables dropout for deterministic results
+-        self.model_esm2.requires_grad_(False)
+-
+-        self._init_metadata()
+-
+-    @property
+-    def is_training(self):
+-        return self._is_training
+-
+-    @property
+-    def dataset_cfg(self):
+-        return self._dataset_cfg
+-
+-    def _init_metadata(self):
+-        """Initialize metadata."""
+-
+-        # Process CSV with different filtering criterions.
+-        pdb_csv = pd.read_csv(self.dataset_cfg.csv_path)
+-        self.raw_csv = pdb_csv
+-        pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
+-
+-        ## Training or validation specific logic.
+-
+-        self.csv = pdb_csv.sample(frac=1.0, random_state=self.random_seed).reset_index()
+-        
+-        self.chain_feats_total = [self._process_csv_row(self.csv.iloc[idx]['processed_path']) for idx in range(len(self.csv))]
+-
+-        self.model_esm2.cpu()
+-        self._log.info(
+-            f"Training: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
+-
+-    def _process_csv_row(self, processed_file_path, split=False, split_len=128, overlap_len=64, min_len=32):
+-        self.count += 1
+-        if self.count%200==0:
+-            self._log.info(
+-                f"pre_count= {self.count}")
+-        
+-        processed_feats_org = du.read_pkl(processed_file_path)
+-        processed_feats = du.parse_chain_feats(processed_feats_org)
+-
+-        # Only take modeled residues.
+-        modeled_idx = processed_feats['modeled_idx']
+-        min_idx = np.min(modeled_idx)
+-        max_idx = np.max(modeled_idx)
+-        # del processed_feats['modeled_idx']
+-        processed_feats = tree.map_structure(
+-            lambda x: x[min_idx:(max_idx+1)], processed_feats)
+-
+-        # Run through OpenFold data transforms.
+-        chain_feats = {
+-            'aatype': torch.tensor(processed_feats['aatype']).long(),
+-            'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
+-            'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
+-        }
+-        chain_feats = data_transforms.atom37_to_frames(chain_feats)
+-        rigids_1 = rigid_utils.Rigid.from_tensor_4x4(chain_feats['rigidgroups_gt_frames'])[:, 0]
+-        rotmats_1 = rigids_1.get_rots().get_rot_mats()
+-        trans_1 = rigids_1.get_trans()
+-        # res_idx = processed_feats['residue_index']
+-
+-        node_repr_pre, pair_repr_pre = get_pre_repr(chain_feats['aatype'], self.model_esm2, 
+-                                                    self.alphabet, self.batch_converter, device = self.device_esm)  # (B,L,d_node_pre=1280), (B,L,L,d_edge_pre=20)
+-        node_repr_pre = node_repr_pre[0].cpu()
+-        pair_repr_pre = pair_repr_pre[0].cpu()
+-
+-        processed_feats_org['node_repr_pre']=node_repr_pre[0].cpu()
+-        processed_feats_org['pair_repr_pre']=pair_repr_pre[0].cpu()
+-
+-        out = {
+-                'aatype': chain_feats['aatype'],
+-                'rotmats_1': rotmats_1,
+-                'trans_1': trans_1,  # (L,3)
+-                'res_mask': torch.tensor(processed_feats['bb_mask']).int(),
+-                'bb_positions': processed_feats['bb_positions'],
+-                'all_atom_positions':chain_feats['all_atom_positions'],
+-                'node_repr_pre':node_repr_pre,
+-                'pair_repr_pre':pair_repr_pre,
+-            }
+-
+-        du.write_pkl(processed_file_path,out)
+-        print(processed_file_path)
+-
+-    def __len__(self):
+-        return len(self.chain_feats_total)
+-
+-    def __getitem__(self, idx):
+-
+-        chain_feats = self.chain_feats_total[idx]
+-        return chain_feats
+-
+-if __name__ == '__main__':
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument('-c', '--csv_path', type=str, default='')
+-    args = parser.parse_args()
+-
+-    csv_path = args.csv_path
+-
+-    res = PdbDataModule(csv_path).setup()
+\ No newline at end of file
+diff --git a/data/cal_static_structure.py b/data/cal_static_structure.py
+deleted file mode 100644
+index 0c7b24e..0000000
+--- a/data/cal_static_structure.py
++++ /dev/null
+@@ -1,168 +0,0 @@
+-"""PDB data loader."""
+-import math
+-import torch
+-import tree
+-import numpy as np
+-import torch
+-import pandas as pd
+-import logging
+-import argparse
+-import random
+-import os
+-import esm
+-import dataclasses
+-
+-from omegaconf import DictConfig, OmegaConf
+-from data import utils as du
+-from data.repr import get_pre_repr
+-from openfold.data import data_transforms
+-from openfold.utils import rigid_utils
+-
+-from pytorch_lightning import LightningDataModule
+-from torch.utils.data import DataLoader, Dataset
+-from torch.utils.data.distributed import DistributedSampler, dist
+-
+-from Bio import PDB
+-from data import parsers, errors
+-from data.residue_constants import restype_atom37_mask, order2restype_with_mask
+-from data.ESMfold_pred import ESMFold_Pred
+-
+-
+-class PdbDataModule(LightningDataModule):
+-    def __init__(self, csv_path):
+-        super().__init__()
+-        self.dataset_cfg = OmegaConf.load('./configs/base.yaml').data.dataset
+-        self.dataset_cfg['csv_path'] = csv_path
+-
+-    def setup(self):
+-        self._train_dataset = PdbDataset(
+-            dataset_cfg=self.dataset_cfg,
+-            is_training=True,
+-        )
+-
+-class PdbDataset(Dataset):
+-    def __init__(
+-            self,
+-            dataset_cfg,
+-            is_training,
+-        ):
+-        self._log = logging.getLogger(__name__)
+-        self._is_training = is_training
+-        self._dataset_cfg = dataset_cfg
+-        self.random_seed = self._dataset_cfg.seed
+-
+-        # Load ESMFold model
+-        self.ESMFold_Pred = ESMFold_Pred()
+-
+-        self.count=0
+-
+-        self._init_metadata()
+-
+-    @property
+-    def is_training(self):
+-        return self._is_training
+-
+-    @property
+-    def dataset_cfg(self):
+-        return self._dataset_cfg
+-
+-    def _init_metadata(self):
+-        """Initialize metadata."""
+-
+-        # Process CSV with different filtering criterions.
+-        pdb_csv = pd.read_csv(self.dataset_cfg.csv_path)
+-        self.raw_csv = pdb_csv
+-        pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
+-
+-        self.csv = pdb_csv.sample(frac=1.0, random_state=self.random_seed).reset_index()
+-        
+-        self.chain_feats_total = [self._process_csv_row(self.csv.iloc[idx]) for idx in range(len(self.csv))]
+-
+-        self._log.info(
+-            f"Training: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
+-
+-    def _process_csv_row(self, csv_row):
+-        processed_file_path = csv_row['processed_path']
+-        raw_pdb_file = csv_row['raw_path']
+-
+-        self.count += 1
+-        if self.count%200==0:
+-            self._log.info(
+-                f"pre_count= {self.count}")
+-        
+-        output_total = du.read_pkl(processed_file_path)
+-
+-
+-        save_dir = os.path.join(os.path.dirname(raw_pdb_file), 'ESMFold_Pred_results')
+-        os.makedirs(save_dir, exist_ok=True)
+-        save_path = os.path.join(save_dir, os.path.basename(processed_file_path)[:6]+'_esmfold.pdb')
+-        if not os.path.exists(save_path):
+-            self.ESMFold_Pred.predict_str(self, raw_pdb_file, save_path)
+-        print(save_path)
+-
+-
+-        metadata = {}
+-        parser = PDB.PDBParser(QUIET=True)
+-        structure = parser.get_structure('test', save_path)
+-
+-        # Extract all chains
+-        struct_chains = {
+-            chain.id.upper(): chain
+-            for chain in structure.get_chains()}
+-        metadata['num_chains'] = len(struct_chains)
+-        # Extract features
+-        struct_feats = []
+-        all_seqs = set()
+-        for chain_id, chain in struct_chains.items():
+-            # Convert chain id into int
+-            chain_id = du.chain_str_to_int(chain_id)
+-            chain_prot = parsers.process_chain(chain, chain_id)
+-            chain_dict = dataclasses.asdict(chain_prot)
+-            chain_dict = du.parse_chain_feats(chain_dict)
+-            all_seqs.add(tuple(chain_dict['aatype']))
+-            struct_feats.append(chain_dict)
+-        if len(all_seqs) == 1:
+-            metadata['quaternary_category'] = 'homomer'
+-        else:
+-            metadata['quaternary_category'] = 'heteromer'
+-        complex_feats = du.concat_np_features(struct_feats, False)
+-        # Process geometry features
+-        complex_aatype = complex_feats['aatype']
+-        metadata['seq_len'] = len(complex_aatype)
+-        modeled_idx = np.where(complex_aatype != 20)[0]
+-        if np.sum(complex_aatype != 20) == 0:
+-            raise errors.LengthError('No modeled residues')
+-        min_modeled_idx = np.min(modeled_idx)
+-        max_modeled_idx = np.max(modeled_idx)
+-        metadata['modeled_seq_len'] = max_modeled_idx - min_modeled_idx + 1
+-        complex_feats['modeled_idx'] = modeled_idx
+-
+-        processed_feats = du.parse_chain_feats(complex_feats)
+-        chain_feats_temp = {
+-            'aatype': torch.tensor(processed_feats['aatype']).long(),
+-            'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
+-            'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
+-        }
+-        chain_feats_temp = data_transforms.atom37_to_frames(chain_feats_temp)
+-        curr_rigid = rigid_utils.Rigid.from_tensor_4x4(chain_feats_temp['rigidgroups_gt_frames'])[:, 0]
+-        output_total['trans_esmfold'] = curr_rigid.get_trans().cpu()
+-        output_total['rotmats_esmfold'] = curr_rigid.get_rots().get_rot_mats().cpu()
+-
+-        du.write_pkl(processed_file_path, output_total)
+-        print(processed_file_path)
+-
+-    def __len__(self):
+-        return len(self.chain_feats_total)
+-
+-    def __getitem__(self, idx):
+-        chain_feats = self.chain_feats_total[idx]
+-        return chain_feats
+-
+-if __name__ == '__main__':
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument('-c', '--csv_path', type=str, default='')
+-    args = parser.parse_args()
+-
+-    csv_path = args.csv_path
+-
+-    res = PdbDataModule(csv_path).setup()
+\ No newline at end of file
+diff --git a/data/interpolant.py b/data/interpolant.py
+index fd40f37..b66ec5f 100644
+--- a/data/interpolant.py
++++ b/data/interpolant.py
+@@ -7,8 +7,6 @@ from data import all_atom
+ import copy
+ from scipy.optimize import linear_sum_assignment
+ 
+-ADD_NOISE = True
+-NOISE_SCHEDULE = 5.0
+ 
+ def _centered_gaussian(num_batch, num_res, device):
+     noise = torch.randn(num_batch, num_res, 3, device=device)
+@@ -38,6 +36,7 @@ class Interpolant:
+         self._rots_cfg = cfg.rots
+         self._trans_cfg = cfg.trans
+         self._sample_cfg = cfg.sampling
++        self.add_noise = cfg.add_noise
+         self._igso3 = None
+ 
+     @property
+@@ -58,14 +57,14 @@ class Interpolant:
+ 
+     def _esmfold_gaussian(self, num_batch, num_res, device, trans_esmfold):
+         noise = torch.randn(num_batch, num_res, 3, device=device)  # (B,L,3)
+-        noise = NOISE_SCHEDULE * noise + trans_esmfold
++        noise = self._trans_cfg.noise_scale * noise + trans_esmfold
+         return noise - torch.mean(noise, dim=-2, keepdims=True)
+ 
+     def _corrupt_trans(self, trans_1, t, res_mask, trans_esmfold):
+         # trans_nm_0 = _centered_gaussian(*res_mask.shape, self._device)
+         # trans_0 = trans_nm_0 * du.NM_TO_ANG_SCALE
+ 
+-        if ADD_NOISE:
++        if self.add_noise:
+             trans_0 = self._esmfold_gaussian(*res_mask.shape, self._device, trans_esmfold)
+         else:
+             trans_0 = trans_esmfold
+@@ -102,7 +101,7 @@ class Interpolant:
+     def _esmfold_igso3(self, res_mask, rotmats_esmfold):
+         num_batch, num_res = res_mask.shape
+         noisy_rotmats = self.igso3.sample(
+-            torch.tensor([1.5]),
++            torch.tensor([self._rots_cfg.noise_scale]),
+             num_batch*num_res
+         ).to(self._device)
+         noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
+@@ -120,7 +119,7 @@ class Interpolant:
+         # rotmats_0 = torch.einsum(
+         #     "...ij,...jk->...ik", rotmats_1, noisy_rotmats)
+         
+-        if ADD_NOISE:
++        if self.add_noise:
+             rotmats_0 = self._esmfold_igso3(res_mask, rotmats_esmfold)
+         else:
+             rotmats_0 = rotmats_esmfold
+@@ -211,7 +210,7 @@ class Interpolant:
+         # rotmats_0 = _uniform_so3(num_batch, num_res, self._device)
+ 
+ 
+-        if ADD_NOISE:
++        if self.add_noise:
+             trans_0 = self._esmfold_gaussian(*res_mask.shape, self._device, batch['trans_esmfold'])
+             rotmats_0 = self._esmfold_igso3(res_mask, batch['rotmats_esmfold'])
+         else:
+diff --git a/data/pdb_dataloader.py b/data/pdb_dataloader.py
+index a533363..68b1bd2 100644
+--- a/data/pdb_dataloader.py
++++ b/data/pdb_dataloader.py
+@@ -67,8 +67,8 @@ class PdbDataModule(LightningDataModule):
+         return DataLoader(
+             self._valid_dataset,
+             sampler=DistributedSampler(self._valid_dataset, shuffle=False),
+-            num_workers=2,
+-            prefetch_factor=2,
++            num_workers=self.loader_cfg.num_workers,
++            prefetch_factor=None if num_workers == 0 else self.loader_cfg.prefetch_factor,
+             persistent_workers=True,
+             # persistent_workers=False,
+         )
+@@ -86,7 +86,7 @@ class PdbDataset(Dataset):
+         self._dataset_cfg = dataset_cfg
+         self.split_frac = self._dataset_cfg.split_frac
+         self.random_seed = self._dataset_cfg.seed
+-        self.count = 0
++        # self.count = 0
+ 
+         self._init_metadata()
+ 
+@@ -111,64 +111,86 @@ class PdbDataset(Dataset):
+             pdb_csv = pdb_csv.iloc[:self.dataset_cfg.subset]
+         pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
+ 
+-        energy_csv_path = self.dataset_cfg.energy_csv_path
+-        self.energy_csv = pd.read_csv(energy_csv_path)
++        # energy_csv_path = self.dataset_cfg.energy_csv_path
++        # self.energy_csv = pd.read_csv(energy_csv_path)
+ 
+         ## Training or validation specific logic.
+         if self.is_training:
++            self.csv = pdb_csv[pdb_csv['is_trainset']]
+             self.csv = pdb_csv.sample(frac=self.split_frac, random_state=self.random_seed).reset_index()
+             self.csv.to_csv(os.path.join(os.path.dirname(self.dataset_cfg.csv_path),"train.csv"), index=False)
+ 
+-            self.chain_feats_total = []
+-            for idx in range(len(self.csv)):
+-                processed_path = self.csv.iloc[idx]['processed_path']
+-                chain_feats_temp = self._process_csv_row(processed_path)
+-                self.chain_feats_total += [chain_feats_temp]
++            # self.chain_feats_total = []
++
++            # for idx in range(len(self.csv)):
++            #     if idx % 200 == 0:
++            #         self._log.info(f"pre_count= {idx}")
++
++            #     # processed_path = self.csv.iloc[idx]['processed_path']
++
++            #     # chain_feats_temp = self._process_csv_row(processed_path)
++            #     # chain_feats_temp = du.read_pkl(processed_path)
++            #     # chain_feats_temp['energy'] = torch.tensor(self.csv.iloc[idx]['energy'], dtype=torch.float32)
++            #     self.chain_feats_total[idx]['energy'] = torch.tensor(self.csv.iloc[idx]['energy'], dtype=torch.float32)
++
++            #     # self.chain_feats_total += [chain_feats_temp]
+ 
++
++            # self._log.info(
++            #     f"Training: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
+             self._log.info(
+-                f"Training: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
++                f"Training: {len(self.csv)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
+         else:
+-            if self.split_frac < 1.0:
+-                train_csv = pdb_csv.sample(frac=self.split_frac, random_state=self.random_seed)
+-                pdb_csv = pdb_csv.drop(train_csv.index)
++            self.csv = pdb_csv[~pdb_csv['is_trainset']]
++            # if self.split_frac < 1.0:
++            #     train_csv = pdb_csv.sample(frac=self.split_frac, random_state=self.random_seed)
++            #     pdb_csv = pdb_csv.drop(train_csv.index)
+             self.csv = pdb_csv[pdb_csv.modeled_seq_len <= self.dataset_cfg.max_eval_length]
+             self.csv.to_csv(os.path.join(os.path.dirname(self.dataset_cfg.csv_path),"valid.csv"), index=False)
+ 
+             self.csv = self.csv.sample(n=min(self.dataset_cfg.max_valid_num, len(self.csv)), random_state=self.random_seed).reset_index()
+ 
+-            self.chain_feats_total = []
+-            for idx in range(len(self.csv)):
+-                processed_path = self.csv.iloc[idx]['processed_path']
+-                chain_feats_temp = self._process_csv_row(processed_path)
+-                self.chain_feats_total += [chain_feats_temp]
++            # self.chain_feats_total = []
++            # for idx in range(len(self.csv)):
++            #     processed_path = self.csv.iloc[idx]['processed_path']
+ 
+-            self._log.info(
+-                f"Valid: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
++            #     # chain_feats_temp = self._process_csv_row(processed_path)
++            #     chain_feats_temp = du.read_pkl(processed_path)
++            #     chain_feats_temp['energy'] = torch.tensor(self.csv.iloc[idx]['energy'], dtype=torch.float32)
+ 
++            #     self.chain_feats_total += [chain_feats_temp]
+ 
+-    def _process_csv_row(self, processed_file_path):
+-        self.count += 1
+-        if self.count%200==0:
++            # self._log.info(
++            #     f"Valid: {len(self.chain_feats_total)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
+             self._log.info(
+-                f"pre_count= {self.count}")
++                f"Valid: {len(self.csv)} examples, len_range is {self.csv['modeled_seq_len'].min()}-{self.csv['modeled_seq_len'].max()}")
++
++    # def _process_csv_row(self, processed_file_path):
++    #     self.count += 1
++    #     if self.count%200==0:
++    #         self._log.info(
++    #             f"pre_count= {self.count}")
+ 
+-        output_total = du.read_pkl(processed_file_path)
+-        energy_csv = self.energy_csv
++    #     output_total = du.read_pkl(processed_file_path)
++    #     energy_csv = self.energy_csv
+ 
+-        file = os.path.basename(processed_file_path).replace(".pkl", ".pdb")
++    #     file = os.path.basename(processed_file_path).replace(".pkl", ".pdb")
+ 
+-        matching_rows = energy_csv[energy_csv['traj_filename'] == file]
+-        # 如果找到了匹配的文件
+-        if not matching_rows.empty:
+-            output_total['energy'] = torch.tensor(matching_rows['energy'].values[0], dtype=torch.float32)
++    #     matching_rows = energy_csv[energy_csv['traj_filename'] == file]
++    #     if not matching_rows.empty:
++    #         output_total['energy'] = torch.tensor(matching_rows['energy'].values[0], dtype=torch.float32)
+ 
+-        return output_total
++    #     return output_total
+ 
+     def __len__(self):
+-        return len(self.chain_feats_total)
++        return len(self.csv)
+ 
+     def __getitem__(self, idx):
+-        chain_feats = self.chain_feats_total[idx]
++        # chain_feats = self.chain_feats_total[idx]
++
++        processed_path = self.csv.iloc[idx]['processed_path']
++        chain_feats = du.read_pkl(processed_path)
++        chain_feats['energy'] = torch.tensor(self.csv.iloc[idx]['energy'], dtype=torch.float32)
+ 
+         energy = chain_feats['energy']
+ 
+@@ -218,94 +240,3 @@ class PdbDataset(Dataset):
+             chain_feats['bb_positions']=(chain_feats['trans_1']).numpy().astype(chain_feats['bb_positions'].dtype)
+ 
+         return chain_feats
+-
+-
+-# class LengthBatcher:
+-
+-#     def __init__(
+-#             self,
+-#             *,
+-#             sampler_cfg,
+-#             metadata_csv,
+-#             seed=123,
+-#             shuffle=True,
+-#             num_replicas=None,
+-#             rank=None,
+-#         ):
+-#         super().__init__()
+-#         self._log = logging.getLogger(__name__)
+-#         if num_replicas is None:
+-#             self.num_replicas = dist.get_world_size()
+-#         else:
+-#             self.num_replicas = num_replicas
+-#         if rank is None:
+-#             self.rank = dist.get_rank()
+-#         else:
+-#             self.rank = rank
+-
+-#         self._sampler_cfg = sampler_cfg
+-#         self._data_csv = metadata_csv
+-#         # Each replica needs the same number of batches. We set the number
+-#         # of batches to arbitrarily be the number of examples per replica.
+-#         self._num_batches = math.ceil(len(self._data_csv) / self.num_replicas)
+-#         self._data_csv['index'] = list(range(len(self._data_csv)))
+-#         self.seed = seed
+-#         self.shuffle = shuffle
+-#         self.epoch = 0
+-#         self.max_batch_size =  self._sampler_cfg.max_batch_size
+-#         self._log.info(f'Created dataloader rank {self.rank+1} out of {self.num_replicas}')
+-        
+-#     def _replica_epoch_batches(self):
+-#         # Make sure all replicas share the same seed on each epoch.
+-#         rng = torch.Generator()
+-#         rng.manual_seed(self.seed + self.epoch)
+-#         if self.shuffle:
+-#             indices = torch.randperm(len(self._data_csv), generator=rng).tolist()
+-#         else:
+-#             indices = list(range(len(self._data_csv)))
+-
+-#         if len(self._data_csv) > self.num_replicas:
+-#             replica_csv = self._data_csv.iloc[
+-#                 indices[self.rank::self.num_replicas]
+-#             ]
+-#         else:
+-#             replica_csv = self._data_csv
+-        
+-#         # Each batch contains multiple proteins of the same length.
+-#         sample_order = []
+-#         for seq_len, len_df in replica_csv.groupby('modeled_seq_len'):
+-#             max_batch_size = min(
+-#                 self.max_batch_size,
+-#                 self._sampler_cfg.max_num_res_squared // seq_len**2 + 1,
+-#             )
+-#             num_batches = math.ceil(len(len_df) / max_batch_size)
+-#             for i in range(num_batches):
+-#                 batch_df = len_df.iloc[i*max_batch_size:(i+1)*max_batch_size]
+-#                 batch_indices = batch_df['index'].tolist()
+-#                 sample_order.append(batch_indices)
+-        
+-#         # Remove any length bias.
+-#         new_order = torch.randperm(len(sample_order), generator=rng).numpy().tolist()
+-#         return [sample_order[i] for i in new_order]
+-
+-#     def _create_batches(self):
+-#         # Make sure all replicas have the same number of batches Otherwise leads to bugs.
+-#         # See bugs with shuffling https://github.com/Lightning-AI/lightning/issues/10947
+-#         all_batches = []
+-#         num_augments = -1
+-#         while len(all_batches) < self._num_batches:
+-#             all_batches.extend(self._replica_epoch_batches())
+-#             num_augments += 1
+-#             if num_augments > 1000:
+-#                 raise ValueError('Exceeded number of augmentations.')
+-#         if len(all_batches) >= self._num_batches:
+-#             all_batches = all_batches[:self._num_batches]
+-#         self.sample_order = all_batches
+-
+-#     def __iter__(self):
+-#         self._create_batches()
+-#         self.epoch += 1
+-#         return iter(self.sample_order)
+-
+-#     def __len__(self):
+-#         return len(self.sample_order)
+diff --git a/data/process_pdb_files.py b/data/process_pdb_files.py
+index 912bb48..36a3c37 100644
+--- a/data/process_pdb_files.py
++++ b/data/process_pdb_files.py
+@@ -1,45 +1,23 @@
+-"""Script for preprocessing PDB files."""
+-
+ import argparse
+ import dataclasses
+ import functools as fn
+ import pandas as pd
+ import os
++import tree
++import torch
+ import multiprocessing as mp
+ import time
++import esm
+ from Bio import PDB
+ import numpy as np
+-import mdtraj as md
+ from data import utils as du
+ from data import parsers
+ from data import errors
+-
+-
+-# Define the parser
+-parser = argparse.ArgumentParser(
+-    description='PDB processing script.')
+-parser.add_argument(
+-    '--pdb_dir',
+-    help='Path to directory with PDB files.',
+-    type=str)
+-parser.add_argument(
+-    '--num_processes',
+-    help='Number of processes.',
+-    type=int,
+-    default=50)
+-parser.add_argument(
+-    '--write_dir',
+-    help='Path to write results to.',
+-    type=str,
+-    default='preprocessed')
+-parser.add_argument(
+-    '--debug',
+-    help='Turn on for debugging.',
+-    action='store_true')
+-parser.add_argument(
+-    '--verbose',
+-    help='Whether to log everything.',
+-    action='store_true')
++from data.repr import get_pre_repr
++from openfold.data import data_transforms
++from openfold.utils import rigid_utils
++from data.cal_trans_rotmats import cal_trans_rotmats
++from data.ESMfold_pred import ESMFold_Pred
+ 
+ 
+ def process_file(file_path: str, write_dir: str):
+@@ -196,9 +174,126 @@ def main(args):
+         f'Finished processing {succeeded}/{total_num_paths} files')
+ 
+ 
++def cal_repr(processed_file_path, model_esm2, alphabet, batch_converter, esm_device):
++    print(f'cal_repr for {processed_file_path}')
++    processed_feats_org = du.read_pkl(processed_file_path)
++    processed_feats = du.parse_chain_feats(processed_feats_org)
++
++    # Only take modeled residues.
++    modeled_idx = processed_feats['modeled_idx']
++    min_idx = np.min(modeled_idx)
++    max_idx = np.max(modeled_idx)
++    # del processed_feats['modeled_idx']
++    processed_feats = tree.map_structure(
++        lambda x: x[min_idx:(max_idx+1)], processed_feats)
++
++    # Run through OpenFold data transforms.
++    chain_feats = {
++        'aatype': torch.tensor(processed_feats['aatype']).long(),
++        'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
++        'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
++    }
++    chain_feats = data_transforms.atom37_to_frames(chain_feats)
++    rigids_1 = rigid_utils.Rigid.from_tensor_4x4(chain_feats['rigidgroups_gt_frames'])[:, 0]
++    rotmats_1 = rigids_1.get_rots().get_rot_mats()
++    trans_1 = rigids_1.get_trans()
++    # res_idx = processed_feats['residue_index']
++
++    node_repr_pre, pair_repr_pre = get_pre_repr(chain_feats['aatype'], model_esm2, alphabet, batch_converter, device = esm_device)  # (B,L,d_node_pre=1280), (B,L,L,d_edge_pre=20)
++    node_repr_pre = node_repr_pre[0].cpu()
++    pair_repr_pre = pair_repr_pre[0].cpu()
++
++    out = {
++            'aatype': chain_feats['aatype'],
++            'rotmats_1': rotmats_1,
++            'trans_1': trans_1,  # (L,3)
++            'res_mask': torch.tensor(processed_feats['bb_mask']).int(),
++            'bb_positions': processed_feats['bb_positions'],
++            'all_atom_positions':chain_feats['all_atom_positions'],
++            'node_repr_pre':node_repr_pre,
++            'pair_repr_pre':pair_repr_pre,
++        }
++
++    du.write_pkl(processed_file_path, out)
++
++def cal_static_structure(processed_file_path, raw_pdb_file, ESMFold):
++    output_total = du.read_pkl(processed_file_path)
++
++    save_dir = os.path.join(os.path.dirname(raw_pdb_file), 'ESMFold_Pred_results')
++    os.makedirs(save_dir, exist_ok=True)
++    save_path = os.path.join(save_dir, os.path.basename(processed_file_path)[:6]+'_esmfold.pdb')
++    if not os.path.exists(save_path):
++        print(f'cal_static_structure for {processed_file_path}')
++        ESMFold.predict_str(raw_pdb_file, save_path)
++    trans, rotmats = cal_trans_rotmats(save_path)
++    output_total['trans_esmfold'] = trans
++    output_total['rotmats_esmfold'] = rotmats
++
++    du.write_pkl(processed_file_path, output_total)
++
++
++def merge_pdb(metadata_path, traj_info_file, valid_seq_file, merged_output_file):
++    df1 = pd.read_csv(metadata_path)
++    df2 = pd.read_csv(traj_info_file)
++    df3 = pd.read_csv(valid_seq_file)
++
++    # 获取文件名
++    df1['traj_filename'] = [os.path.basename(i) for i in df1['raw_path']]
++
++    # 合并数据
++    merged = df1.merge(df2[['traj_filename', 'energy']], on='traj_filename', how='left')
++    merged['is_trainset'] = ~merged['traj_filename'].str[:6].isin(df3['file'])
++
++    # 保存结果
++    merged.to_csv(merged_output_file, index=False)
++    print('merge complete!')
++
++
+ if __name__ == "__main__":
+-    # Don't use GPU
+-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
++    parser = argparse.ArgumentParser()
++
++    parser.add_argument("--pdb_dir", type=str, default="./dataset/ATLAS/select")
++    parser.add_argument("--write_dir", type=str, default="./dataset/ATLAS/select/pkl")
++    parser.add_argument("--csv_name", type=str, default="metadata.csv")
++    parser.add_argument("--debug", type=bool, default=False)
++    parser.add_argument("--num_processes", type=int, default=48)
++    parser.add_argument('--verbose', help='Whether to log everything.',action='store_true')
++
++    parser.add_argument("--esm_device", type=str, default='cuda')
++
++    parser.add_argument("--traj_info_file", type=str, default='./dataset/ATLAS/select/traj_info_select.csv')
++    parser.add_argument("--valid_seq_file", type=str, default='./inference/valid_seq.csv')
++    parser.add_argument("--merged_output_file", type=str, default='./dataset/ATLAS/select/pkl/metadata_merged.csv')
++
+     args = parser.parse_args()
++
++    # process .pdb to .pkl
+     main(args)
++
++    # cal_repr
++    csv_path = os.path.join(args.write_dir, args.csv_name)
++    pdb_csv = pd.read_csv(csv_path)
++    pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
++    model_esm2, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
++    batch_converter = alphabet.get_batch_converter()
++    model_esm2.eval()
++    model_esm2.requires_grad_(False)
++    model_esm2.to(args.esm_device)
++    for idx in range(len(pdb_csv)):
++        cal_repr(pdb_csv.iloc[idx]['processed_path'], model_esm2, alphabet, batch_converter, args.esm_device)
++
++    # cal_static_structure
++    csv_path = os.path.join(args.write_dir, args.csv_name)
++    pdb_csv = pd.read_csv(csv_path)
++    ESMFold = ESMFold_Pred(device = args.esm_device)
++    for idx in range(len(pdb_csv)):
++        cal_static_structure(pdb_csv.iloc[idx]['processed_path'], pdb_csv.iloc[idx]['raw_path'], ESMFold)
++
++    # merge csv
++    csv_path = os.path.join(args.write_dir, args.csv_name)
++    merge_pdb(csv_path, args.traj_info_file, args.valid_seq_file, args.merged_output_file)
++
++
++    
++    
++
+diff --git a/dataset/download.py b/dataset/download.py
+index f6fee16..165e857 100644
+--- a/dataset/download.py
++++ b/dataset/download.py
+@@ -1,18 +1,10 @@
+ import os
++import argparse
+ import multiprocessing as mp
+ 
+-data_dir = "./dataset"
+-file_txt = os.path.join(data_dir,'ATLAS_filename.txt')
+-url_base = "https://www.dsimb.inserm.fr/ATLAS/api/ATLAS/analysis/"
+-num_processes = 48
+ 
+-os.makedirs(data_dir, exist_ok=True)
+-
+-with open(file_txt,'r+') as f:
+-    file_cont = f.read()
+-    file_list = file_cont.split("\n")
+-
+-def fn(file):
++def fn(para):
++    file, url_base, data_dir = para
+     url = url_base + file
+     output_filename = file+".zip"
+     output_path = os.path.join(data_dir, output_filename)
+@@ -20,9 +12,27 @@ def fn(file):
+     os.system(f"curl -X GET {url} -H accept: */* --output {output_path}")
+     os.system(f"unzip {output_path} -d {unzip_path}")
+ 
+-with mp.Pool(num_processes) as pool:
+-    _ = pool.map(fn,file_list)
+-    print("finished")
+ 
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser()
++
++    parser.add_argument("--filename_file", type=str, default="./dataset/ATLAS_filename.txt",)
++    parser.add_argument("--url_base", type=str, default="https://www.dsimb.inserm.fr/ATLAS/api/ATLAS/analysis/")
++    parser.add_argument("--output_dir", type=str, default="./dataset/ATLAS_test",)
++
++    args = parser.parse_args()
++
++    num_processes = 48
++
++    os.makedirs(args.output_dir, exist_ok=True)
+ 
++    with open(args.filename_file,'r+') as f:
++        file_cont = f.read()
++        file_list = file_cont.split("\n")
++    para_list = [(file, args.url_base, args.output_dir) for file in file_list]
+ 
++    with mp.Pool(num_processes) as pool:
++        _ = pool.map(fn, para_list)
++        print("finished")
++    
++    os.system(f"cp -rf {args.filename_file} {args.output_dir}")
+diff --git a/dataset/md_select.py b/dataset/md_select.py
+deleted file mode 100644
+index 749286f..0000000
+--- a/dataset/md_select.py
++++ /dev/null
+@@ -1,75 +0,0 @@
+-import os
+-import MDAnalysis as mda
+-from MDAnalysis.analysis import align
+-import numpy as np
+-import seaborn as sns
+-from Bio import SeqIO
+-import os
+-import random
+-import pandas as pd
+-import multiprocessing as mp
+-
+-data_dir = "./dataset"
+-output_dir = os.path.join(data_dir,"select")
+-num_processes = 48
+-file_txt = os.path.join(data_dir,'ATLAS_filename.txt')
+-
+-os.makedirs(output_dir,exist_ok=True)
+-
+-def select_str(file_list, select_num = 11):
+-    info_total = {
+-            'rad_gyr': [],
+-            'rmsd_ref':[],
+-            'traj_filename':[],
+-            'energy':[],
+-        }
+-    count = 0
+-    for file in file_list:
+-        count += 1
+-        print(count, file)
+-        md_dir = os.path.join(data_dir, file)
+-        md_csv = pd.read_csv(os.path.join(md_dir, 'traj_info.csv'))
+-        md_csv = md_csv.sort_values('energy', ascending=True)
+-
+-        select_filename = []
+-        temp = 0
+-        while(len(select_filename)<select_num - 1):
+-            temp += 1
+-            if temp > 100000:
+-                break
+-            flag = True
+-            idx = random.randint(0, len(md_csv)-1)
+-            for info in select_filename:
+-                if int(info['energy']*10) == int(md_csv.iloc[idx]['energy']*10):
+-                    flag = False
+-                    break
+-            if not flag:
+-                continue
+-            else:
+-                select_filename.append(md_csv.iloc[idx])
+-        print('select_num:',len(select_filename))
+-        select_filename.append(md_csv.iloc[0])
+-        for info in select_filename:
+-            file = info['traj_filename']
+-            os.system(f'cp -rf {os.path.join(md_dir,file)} {output_dir}')
+-        
+-        for info in select_filename:
+-            info_total['traj_filename'] += [info['traj_filename']]
+-            info_total['energy'] += [info['energy']]
+-            info_total['rad_gyr'] += [info['rad_gyr']]
+-            info_total['rmsd_ref'] += [info['rmsd_ref']]
+-    df = pd.DataFrame(info_total,index=[0]*len(info_total['energy']))
+-    df.to_csv(os.path.join(output_dir, 'traj_info.csv'),index=False)
+-
+-
+-with open(file_txt,'r+') as f:
+-    file_cont = f.read()
+-    file_list = file_cont.split("\n")
+-
+-select_str(file_list)
+-
+-# with mp.Pool(num_processes) as pool:
+-#     _ = pool.map(select_str,file_list)
+-
+-
+-
+diff --git a/dataset/traj_analyse.py b/dataset/traj_analyse.py
+deleted file mode 100644
+index 5a62fca..0000000
+--- a/dataset/traj_analyse.py
++++ /dev/null
+@@ -1,113 +0,0 @@
+-import os
+-import pandas as pd
+-import MDAnalysis as mda
+-from MDAnalysis.analysis import align
+-import numpy as np
+-import seaborn as sns
+-import matplotlib.pyplot as plt
+-from scipy.stats import gaussian_kde
+-import multiprocessing as mp
+-
+-
+-dirpath = "./dataset"
+-k=2.32*1e-4  # unit(eV/K)
+-T=298.15  # unit(K)
+-file_txt = os.path.join(dirpath,'ATLAS_filename.txt')
+-num_processes = 48
+-
+-with open(file_txt,'r+') as f:
+-    file_cont = f.read()
+-    file_list = file_cont.split("\n")
+-
+-
+-out_total = {
+-    'traj_filename':[],
+-    'rad_gyr': [],
+-    'rmsd_ref':[],
+-    'energy':[],
+-}
+-
+-def fn(file_md, use_csv = False):
+-    mdpath = os.path.join(dirpath,file_md)
+-    filename = file_md
+-
+-    if not use_csv:
+-        pdb_filepath = os.path.join(mdpath,filename+".pdb")
+-        topology_filepath = os.path.join(mdpath,filename+".pdb")
+-
+-        u_ref = mda.Universe(pdb_filepath)
+-        protein_ref = u_ref.select_atoms('protein')
+-        bb_atom_ref = protein_ref.select_atoms('name CA or name C or name N')
+-
+-        info = {
+-                'rad_gyr': [],
+-                'rmsd_ref':[],
+-                'traj_filename':[],
+-                'energy':[],
+-            }
+-
+-        for xtc_idx in range(1,4):
+-            trajectory_filepath = os.path.join(mdpath,filename+"_R"+str(xtc_idx)+".xtc") 
+-
+-            u = mda.Universe(topology_filepath, trajectory_filepath)
+-            
+-            protein = u.select_atoms('protein')
+-            bb_atom = protein.select_atoms('name CA or name C or name N')
+-
+-            # CA_atoms = u.select_atoms('name CA')
+-            # bb_atoms = u.select_atoms('backbone')
+-
+-            count = 0
+-            # for ts in u.trajectory:
+-            for _ in u.trajectory:
+-                count += 1
+-
+-                rad_gyr = bb_atom.radius_of_gyration()
+-                rmsd_ref = align.alignto(bb_atom, bb_atom_ref, select='all', match_atoms=False)[-1]
+-                info['rad_gyr'].append(rad_gyr)
+-                info['rmsd_ref'].append(rmsd_ref)
+-
+-                traj_filename = filename + '_R' + str(xtc_idx) + '_'+str(count)+".pdb"
+-                info['traj_filename'].append(traj_filename)
+-                print(traj_filename)
+-                protein.write(os.path.join(mdpath, traj_filename))
+-    else:
+-        info = pd.read_csv(os.path.join(mdpath, "traj_info.csv"))
+-        
+-    info_array = np.stack([info['rad_gyr'],info['rmsd_ref']],axis=0)  # (2,2500)
+-    kde = gaussian_kde(info_array)
+-    density = kde(info_array)  # (2500,)
+-    G = k*T*np.log(np.max(density)/density)  # (2500,)
+-    G = (G-np.min(G))/(np.max(G)-np.min(G))
+-    
+-    if use_csv:
+-        info['energy'] = G.tolist()
+-    else:
+-        info['energy'] += G.tolist()
+-
+-    out_total = pd.DataFrame(info)
+-    x, y = np.meshgrid(np.linspace(min(out_total['rad_gyr'])-0.25, max(out_total['rad_gyr'])+0.25, 200),
+-                       np.linspace(min(out_total['rmsd_ref'])-0.25, max(out_total['rmsd_ref'])+0.25, 200))
+-    grid_coordinates = np.vstack([x.ravel(), y.ravel()])
+-    density_values = kde(grid_coordinates)
+-    # 将密度值变形为与网格坐标相同的形状
+-    density_map = density_values.reshape(x.shape)
+-    # 绘制高斯核密度估计图
+-    plt.contourf(x, y, density_map, levels= np.arange(np.max(density_map)/20, np.max(density_map)*1.1, np.max(density_map)/10))
+-    plt.colorbar()
+-
+-    plt.savefig(os.path.join(mdpath,"md.png"))
+-    plt.close()
+-
+-    out_total.to_csv(os.path.join(mdpath,"traj_info.csv"),index=False)
+-
+-with mp.Pool(num_processes) as pool:
+-    _ = pool.map(fn,file_list)
+-
+-# for file_md in ['16pk_A','7wab_A','7s86_A']:
+-#     fn(file_md)
+-
+-
+-
+-
+-
+diff --git a/experiments/__pycache__/utils.cpython-310.pyc b/experiments/__pycache__/utils.cpython-310.pyc
+index eb5825d..c399f62 100644
+Binary files a/experiments/__pycache__/utils.cpython-310.pyc and b/experiments/__pycache__/utils.cpython-310.pyc differ
+diff --git a/experiments/inference_se3_flows.py b/experiments/inference_se3_flows.py
+index 7b54418..7505c14 100644
+--- a/experiments/inference_se3_flows.py
++++ b/experiments/inference_se3_flows.py
+@@ -36,19 +36,20 @@ class Sampler:
+         """
+         ckpt_path = cfg.inference.ckpt_path
+         ckpt_dir = os.path.dirname(ckpt_path)
+-        ckpt_cfg = OmegaConf.load(os.path.join(ckpt_dir, 'config.yaml'))
++        # ckpt_cfg = OmegaConf.load(os.path.join(ckpt_dir, 'config.yaml'))
++        # ckpt_cfg = torch.load(ckpt_path, map_location="cpu")['hyper_parameters']['cfg']
+ 
+         # Set-up config.
+         OmegaConf.set_struct(cfg, False)
+-        OmegaConf.set_struct(ckpt_cfg, False)
+-        cfg = OmegaConf.merge(cfg, ckpt_cfg)
+-        cfg.experiment.checkpointer.dirpath = './'
++        # OmegaConf.set_struct(ckpt_cfg, False)
++        # cfg = OmegaConf.merge(cfg, ckpt_cfg)
++        # cfg.experiment.checkpointer.dirpath = './'
+ 
+         self._cfg = cfg
+-        self._pmpnn_dir = cfg.inference.pmpnn_dir
++        # self._pmpnn_dir = cfg.inference.pmpnn_dir
+         self._infer_cfg = cfg.inference
+         self._samples_cfg = self._infer_cfg.samples
+-        self._rng = np.random.default_rng(self._infer_cfg.seed)
++        # self._rng = np.random.default_rng(self._infer_cfg.seed)
+ 
+         # Set-up directories to write results to
+         self._ckpt_name = '/'.join(ckpt_path.replace('.ckpt', '').split('/')[-3:])
+@@ -99,124 +100,6 @@ class Sampler:
+             devices=devices,
+         )
+         trainer.predict(self._flow_module, dataloaders=dataloader)
+-
+-        self._output_ckpt_dir = os.path.join(
+-            self._infer_cfg.output_dir,
+-            self._ckpt_name
+-        )
+-
+-        for root, dirs, files in os.walk(self._output_dir):
+-            if re.search("batch_idx",root):
+-                print(root)
+-                os.makedirs(os.path.join(root, 'self_consistency'), exist_ok=True)
+-                pdb_path = None
+-                for file in files:
+-                    if re.search("sample.*pdb",file):
+-                        shutil.copy(os.path.join(root, file), 
+-                                    os.path.join(root, 'self_consistency'))
+-                        pdb_path = os.path.join(root, file)
+-                        break
+-                _ = self.run_self_consistency(
+-                    os.path.join(root, 'self_consistency'),
+-                    pdb_path,
+-                    motif_mask=None)
+-
+-    def eval_test(self):
+-        output_dir = "inference_outputs/weights/epoch=0-step=985/"
+-        for root, dirs, files in os.walk(output_dir):
+-            if re.search("sample_",root) and not (re.search("esmf",root) or 
+-                                                  re.search("self_consistency",root) or 
+-                                                  re.search("seqs",root)):
+-                print(root)
+-                os.makedirs(os.path.join(root, 'self_consistency'), exist_ok=True)
+-                pdb_path = None
+-                for file in files:
+-                    if re.search("sample.*pdb",file):
+-                        shutil.copy(os.path.join(root, file), 
+-                                    os.path.join(root, 'self_consistency'))
+-                        pdb_path = os.path.join(root, file)
+-                        break
+-                _ = self.run_self_consistency(
+-                    os.path.join(root, 'self_consistency'),
+-                    pdb_path,
+-                    motif_mask=None)
+-
+-    def run_self_consistency(
+-                self,
+-                decoy_pdb_dir: str,
+-                reference_pdb_path: str,
+-                motif_mask: Optional[np.ndarray]=None):
+-            """Run self-consistency on design proteins against reference protein.
+-            
+-            Args:
+-                decoy_pdb_dir: directory where designed protein files are stored.
+-                reference_pdb_path: path to reference protein file
+-                motif_mask: Optional mask of which residues are the motif.
+-
+-            Returns:
+-                Writes ProteinMPNN outputs to decoy_pdb_dir/seqs
+-                Writes ESMFold outputs to decoy_pdb_dir/esmf
+-                Writes results in decoy_pdb_dir/sc_results.csv
+-            """
+-
+-            # Run ESMFold on each ProteinMPNN sequence and calculate metrics.
+-            mpnn_results = {
+-                'tm_score': [],
+-                'sample_path': [],
+-                'header': [],
+-                'sequence': [],
+-                'rmsd': [],
+-            }
+-
+-            esmf_dir = os.path.join(decoy_pdb_dir, 'esmf')
+-            os.makedirs(esmf_dir, exist_ok=True)
+-            # fasta_seqs = fasta.FastaFile.read(mpnn_fasta_path)
+-            sample_feats = du.parse_pdb_feats('sample', reference_pdb_path)
+-
+-            # Run ESMFold
+-            with open(os.path.join(decoy_pdb_dir,"../seq.txt"),'r') as f:
+-                seq_specified = f.read()
+-            string = seq_specified
+-            header = "seq_specified"
+-            try:
+-                esmf_sample_path = os.path.join(esmf_dir, f'sample_specified.pdb')
+-                _ = self.run_folding(string, esmf_sample_path)
+-                esmf_feats = du.parse_pdb_feats('folded_sample', esmf_sample_path)
+-                sample_seq = du.aatype_to_seq(sample_feats['aatype'])
+-
+-                # Calculate scTM of ESMFold outputs with reference protein
+-                _, tm_score = metrics.calc_tm_score(
+-                    sample_feats['bb_positions'], esmf_feats['bb_positions'],
+-                    sample_seq, sample_seq)
+-                rmsd = metrics.calc_aligned_rmsd(
+-                    sample_feats['bb_positions'], esmf_feats['bb_positions'])
+-                if motif_mask is not None:
+-                    sample_motif = sample_feats['bb_positions'][motif_mask]
+-                    of_motif = esmf_feats['bb_positions'][motif_mask]
+-                    motif_rmsd = metrics.calc_aligned_rmsd(
+-                        sample_motif, of_motif)
+-                    mpnn_results['motif_rmsd'].append(motif_rmsd)
+-                mpnn_results['rmsd'].append(rmsd)
+-                mpnn_results['tm_score'].append(tm_score)
+-                mpnn_results['sample_path'].append(esmf_sample_path)
+-                mpnn_results['header'].append(header)
+-                mpnn_results['sequence'].append(string)
+-            except Exception as e: 
+-                pass
+-
+-            # Save results to CSV
+-            csv_path = os.path.join(decoy_pdb_dir, 'sc_results.csv')
+-            mpnn_results = pd.DataFrame(mpnn_results)
+-            mpnn_results.to_csv(csv_path)
+-
+-    def run_folding(self, sequence, save_path):
+-        """Run ESMFold on sequence."""
+-        with torch.no_grad():
+-            output = self._folding_model.infer_pdb(sequence)
+-
+-        with open(save_path, "w") as f:
+-            f.write(output)
+-        return output  
+         
+ 
+ 
+diff --git a/experiments/utils.py b/experiments/utils.py
+index 71cfc18..b97b7fe 100644
+--- a/experiments/utils.py
++++ b/experiments/utils.py
+@@ -2,10 +2,14 @@
+ import logging
+ import torch
+ import os
++import re
++import random
++import esm
++
+ import numpy as np
+ import pandas as pd
+ import random
+-import esm
++
+ from analysis import utils as au
+ from pytorch_lightning.utilities.rank_zero import rank_zero_only
+ from data.residue_constants import restype_order
+@@ -14,7 +18,7 @@ from data import utils as du
+ from data.residue_constants import restype_atom37_mask
+ from openfold.data import data_transforms
+ from openfold.utils import rigid_utils
+-import random
++from data.cal_trans_rotmats import cal_trans_rotmats
+ 
+ 
+ class LengthDataset(torch.utils.data.Dataset):
+@@ -35,22 +39,44 @@ class LengthDataset(torch.utils.data.Dataset):
+         # self._all_filename = ['P450'] * 250
+         # self._all_sample_seqs = [('GKLPPGPSPLPVLGNLLQMDRKGLLRSFLRLREKYGDVFTVYLGSRPVVVLCGTDAIREALVDQAEAFSGRGKIAVVDPIFQGYGVIFANGERWRALRRFSLATMRDFGMGKRSVEERIQEEARCLVEELRKSKGALLDNTLLFHSITSNIICSIVFGKRFDYKDPVFLRLLDLFFQSFSLISSFSSQVFELFSGFLKYFPGTHRQIYRNLQEINTFIGQSVEKHRATLDPSNPRDFIDVYLLRMEKDKSDPSSEFHHQNLILTVLSLFFAGTETTSTTLRYGFLLMLKYPHVTERVQKEIEQVIGSHRPPALDDRAKMPYTDAVIHEIQRLGDLIPFGVPHTVTKDTQFRGYVIPKNTEVFPVLSSALHDPRYFETPNTFNPGHFLDANGALKRNEGFMPFSLGKRICLGEGIARTELFLFFTTILQNFSIASPVPPEDIDLTPRESGVGNVPPSYQIRFLARH',0)] * 250
+ 
+-
+         validcsv = pd.read_csv(self._samples_cfg.validset_path)
++
+         self._all_sample_seqs = []
+         self._all_filename = []
++
++        prob_num = 500
++        exp_prob = np.exp([-prob/prob_num*2 for prob in range(prob_num)]).cumsum()
++        exp_prob = exp_prob/np.max(exp_prob)
++
+         for idx in range(len(validcsv['seq'])):
+ 
+-            # if idx < 25:
+-            # if idx >=25 and idx < 50:
+-            # if idx >=50 and idx < 75:
+-            # if idx >= 75:
++            # if idx >= 0 and idx < 15:
++            # if idx >= 15 and idx < 30:
++            # if idx >= 30 and idx < 45:
++            # if idx >= 45 and idx < 60:
++            # if idx >= 60 and idx < 75:
++            # if idx >= 75 and idx < 90:
++            # if idx >= 90 and idx < 105:
+             #     pass
+             # else:
+             #     continue
+ 
++
++            # if not re.search('2wsi_A',validcsv['file'][idx]):
++            #     continue
++
++
+             self._all_filename += [validcsv['file'][idx]] * self._samples_cfg.sample_num
+-            self._all_sample_seqs += [(validcsv['seq'][idx], 0)] * self._samples_cfg.sample_num
++
++            for batch_idx in range(self._samples_cfg.sample_num):
++
++                rand = random.random()
++                for prob in range(prob_num):
++                    if rand < exp_prob[prob]:
++                        energy = torch.tensor(prob/prob_num)
++                        break
++
++                self._all_sample_seqs += [(validcsv['seq'][idx], energy)]
+ 
+ 
+         self._all_sample_ids = self._all_sample_seqs
+@@ -87,13 +113,7 @@ class LengthDataset(torch.utils.data.Dataset):
+         return len(self._all_sample_ids)
+ 
+     def __getitem__(self, idx):
+-        # num_res, sample_id = self._all_sample_ids[idx]
+-        # batch = {
+-        #     'num_res': num_res,
+-        #     'sample_id': sample_id,
+-        # }
+-
+-        seq, _ = self._all_sample_ids[idx]
++        seq, energy = self._all_sample_ids[idx]
+         aatype = torch.tensor([restype_order[s] for s in seq])
+         num_res = len(aatype)
+ 
+@@ -104,82 +124,17 @@ class LengthDataset(torch.utils.data.Dataset):
+         
+         motif_mask = torch.ones(aatype.shape)
+ 
+-        prob_num = 500
+-        exp_prob = np.exp([-prob/prob_num*2 for prob in range(prob_num)]).cumsum()
+-        exp_prob = exp_prob/np.max(exp_prob)
+-
+-
+-        flag = True
+-        while(flag):
+-            rand = random.random()
+-            for prob in range(prob_num):
+-                if rand < exp_prob[prob]:
+-                    energy = torch.tensor(prob/prob_num)
+ 
+-                    # if energy > 0.8:
+-                    #     flag = False
+-                    flag = False
+-                    break
++        save_path = os.path.join(self.esm_savepath, "esm_" + self._all_filename[idx] + ".pdb")
++        if not os.path.exists(save_path):
++            seq_string = seq
++            with torch.no_grad():
++                output = self._folding_model.infer_pdb(seq_string)
++            with open(save_path, "w") as f:
++                f.write(output)
+ 
+ 
+-        seq_string = seq
+-        with torch.no_grad():
+-            output = self._folding_model.infer_pdb(seq_string)
+-        import os
+-        save_path = "temp_"+seq[:4]+".pdb"
+-        with open(save_path, "w") as f:
+-            f.write(output)
+-
+-        import dataclasses
+-        from Bio import PDB
+-        from data import parsers, errors
+-
+-        metadata = {}
+-        parser = PDB.PDBParser(QUIET=True)
+-        structure = parser.get_structure('test', save_path)
+-        os.system("rm -rf "+save_path)
+-        # Extract all chains
+-        struct_chains = {
+-            chain.id.upper(): chain
+-            for chain in structure.get_chains()}
+-        metadata['num_chains'] = len(struct_chains)
+-        # Extract features
+-        struct_feats = []
+-        all_seqs = set()
+-        for chain_id, chain in struct_chains.items():
+-            # Convert chain id into int
+-            chain_id = du.chain_str_to_int(chain_id)
+-            chain_prot = parsers.process_chain(chain, chain_id)
+-            chain_dict = dataclasses.asdict(chain_prot)
+-            chain_dict = du.parse_chain_feats(chain_dict)
+-            all_seqs.add(tuple(chain_dict['aatype']))
+-            struct_feats.append(chain_dict)
+-        if len(all_seqs) == 1:
+-            metadata['quaternary_category'] = 'homomer'
+-        else:
+-            metadata['quaternary_category'] = 'heteromer'
+-        complex_feats = du.concat_np_features(struct_feats, False)
+-        # Process geometry features
+-        complex_aatype = complex_feats['aatype']
+-        metadata['seq_len'] = len(complex_aatype)
+-        modeled_idx = np.where(complex_aatype != 20)[0]
+-        if np.sum(complex_aatype != 20) == 0:
+-            raise errors.LengthError('No modeled residues')
+-        min_modeled_idx = np.min(modeled_idx)
+-        max_modeled_idx = np.max(modeled_idx)
+-        metadata['modeled_seq_len'] = max_modeled_idx - min_modeled_idx + 1
+-        complex_feats['modeled_idx'] = modeled_idx
+-
+-        processed_feats = du.parse_chain_feats(complex_feats)
+-        chain_feats_temp = {
+-            'aatype': torch.tensor(processed_feats['aatype']).long(),
+-            'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
+-            'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
+-        }
+-        chain_feats_temp = data_transforms.atom37_to_frames(chain_feats_temp)
+-        curr_rigid = rigid_utils.Rigid.from_tensor_4x4(chain_feats_temp['rigidgroups_gt_frames'])[:, 0]
+-        trans_esmfold = curr_rigid.get_trans()
+-        rotmats_esmfold = curr_rigid.get_rots().get_rot_mats()
++        trans_esmfold, rotmats_esmfold = cal_trans_rotmats(save_path)
+ 
+         batch = {
+             'filename':self._all_filename[idx],
+diff --git a/models/__pycache__/flow_model.cpython-310.pyc b/models/__pycache__/flow_model.cpython-310.pyc
+index ed26747..3b0e498 100644
+Binary files a/models/__pycache__/flow_model.cpython-310.pyc and b/models/__pycache__/flow_model.cpython-310.pyc differ
+diff --git a/models/__pycache__/flow_module.cpython-310.pyc b/models/__pycache__/flow_module.cpython-310.pyc
+index 10c241c..71f640f 100644
+Binary files a/models/__pycache__/flow_module.cpython-310.pyc and b/models/__pycache__/flow_module.cpython-310.pyc differ
+diff --git a/models/flow_model.py b/models/flow_model.py
+index ba30ab2..e16a454 100644
+--- a/models/flow_model.py
++++ b/models/flow_model.py
+@@ -30,26 +30,32 @@ class FlowModel(nn.Module):
+         #                             nn.Linear(self._ipa_conf.c_s, aatype_total)
+         #                         )
+ 
+-        self.use_np_update = False
+-        self.use_e3_transformer = False
+-        self.use_torsions = True
+-        self.use_mid_bb_update = False
+-        self.use_mid_bb_update_e3 = False
+-        # self.use_adapter_node = self._model_conf.use_adapter_node
+-        self.use_adapter_node = True
++        # self.use_np_update = False
++        # self.use_e3_transformer = False
++        # self.use_torsions = True
++        # self.use_mid_bb_update = False
++        # self.use_mid_bb_update_e3 = False
++        # self.use_adapter_node = True
+ 
+ 
++        self.use_torsions = model_conf.use_torsions
++        self.use_adapter_node = model_conf.use_adapter_node
++        self.use_mid_bb_update = model_conf.use_mid_bb_update
++        self.use_mid_bb_update_e3 = model_conf.use_mid_bb_update_e3
++        self.use_e3_transformer = model_conf.use_e3_transformer
++
+ 
+         if self.use_adapter_node:
+             self.energy_adapter = Energy_Adapter_Node(d_node=model_conf.node_embed_size, n_head=model_conf.ipa.no_heads, p_drop=model_conf.dropout)
+ 
+         if self.use_torsions:
++            self.num_torsions = 7
+             self.torsions_pred_layer1 = nn.Sequential(
+                                         nn.Linear(self._ipa_conf.c_s, self._ipa_conf.c_s),
+                                         nn.ReLU(),
+                                         nn.Linear(self._ipa_conf.c_s, self._ipa_conf.c_s),
+                                     )
+-            self.torsions_pred_layer2 = nn.Linear(self._ipa_conf.c_s, 5*2)
++            self.torsions_pred_layer2 = nn.Linear(self._ipa_conf.c_s, self.num_torsions * 2)
+ 
+         if self.use_e3_transformer or self.use_mid_bb_update_e3:
+             self.max_dist = self._model_conf.edge_features.max_dist
+@@ -331,14 +337,14 @@ class FlowModel(nn.Module):
+ 
+         if self.use_torsions:
+             pred_torsions = node_embed + self.torsions_pred_layer1(node_embed)
+-            pred_torsions = self.torsions_pred_layer2(pred_torsions).reshape(input_feats['aatype'].shape+(5,2))  # (B,L,5,2)
++            pred_torsions = self.torsions_pred_layer2(pred_torsions).reshape(input_feats['aatype'].shape+(self.num_torsions,2))  # (B,L,self.num_torsions,2)
+ 
+-            norm_torsions = torch.sqrt(torch.sum(pred_torsions ** 2, dim=-1, keepdim=True))  # (B,L,5,1)
+-            pred_torsions = pred_torsions / norm_torsions  # (B,L,5,2)
++            norm_torsions = torch.sqrt(torch.sum(pred_torsions ** 2, dim=-1, keepdim=True))  # (B,L,self.num_torsions,1)
++            pred_torsions = pred_torsions / norm_torsions  # (B,L,self.num_torsions,2)
+ 
+-            add_rot = pred_torsions.new_zeros((1,) * len(pred_torsions.shape[:-2])+(3,2))  # (1,1,3,2)
++            add_rot = pred_torsions.new_zeros((1,) * len(pred_torsions.shape[:-2])+(8-self.num_torsions,2))  # (1,1,8-self.num_torsions,2)
+             add_rot[..., 1] = 1
+-            add_rot = add_rot.expand(*pred_torsions.shape[:-2], -1, -1)  # (B,L,3,2)
++            add_rot = add_rot.expand(*pred_torsions.shape[:-2], -1, -1)  # (B,L,8-self.num_torsions,2)
+             pred_torsions_with_CB = torch.concat([add_rot, pred_torsions],dim=-2)  # (B,L,8,2)
+ 
+             # aatype  # (B,L)
+diff --git a/models/flow_module.py b/models/flow_module.py
+index ceb9a74..1862670 100644
+--- a/models/flow_module.py
++++ b/models/flow_module.py
+@@ -80,7 +80,11 @@ class FlowModule(LightningModule):
+         rotmats_t = noisy_batch['rotmats_t']
+         gt_rot_vf = so3_utils.calc_rot_vf(
+             rotmats_t, gt_rotmats_1.type(torch.float32))
+-        gt_bb_atoms = all_atom.to_atom37(gt_trans_1, gt_rotmats_1)[:, :, :3, :] 
++
++        gt_bb_atoms_total_result = all_atom.to_atom37(gt_trans_1, gt_rotmats_1, aatype=noisy_batch['aatype'], get_mask=True)
++        gt_bb_atoms = gt_bb_atoms_total_result[0][:, :, :3, :] 
++        atom37_mask = gt_bb_atoms_total_result[1]
++
+         gt_atoms = noisy_batch['all_atom_positions']  # (B, L, 37, 3)
+ 
+         # Timestep used for normalization.
+@@ -104,7 +108,7 @@ class FlowModule(LightningModule):
+         # aatype_loss = training_cfg.aatype_loss_weight * aatype_loss  # (B,)
+ 
+         # Translation VF loss
+-        trans_error = (gt_trans_1 - pred_trans_1) / norm_scale * training_cfg.trans_scale
++        trans_error = (gt_trans_1 - pred_trans_1) / norm_scale
+         loss_denom = torch.sum(loss_mask, dim=-1) * 3  # 
+         trans_loss = training_cfg.translation_loss_weight * torch.sum(
+             trans_error ** 2 * loss_mask[..., None],
+@@ -121,13 +125,24 @@ class FlowModule(LightningModule):
+         # rots_vf_loss = torch.zeros(num_batch,device=pred_trans_1.device,dtype=torch.float32)
+ 
+ 
++        # torsion loss
++        torsion_angles, torsion_mask = all_atom.prot_to_torsion_angles(noisy_batch['aatype'], gt_atoms, atom37_mask)
++        # print('atom37_mask',atom37_mask.shape, atom37_mask[0,:5,:15])  # (B,L,37)
++        # print('torsion_angles',torsion_angles.shape, torsion_angles[0,:5,:15,:])  # (B,L,7,2)
++        # print('torsion_mask',torsion_mask.shape, torsion_mask[0,:5,:15])  # (B,L,7)
++        torsion_loss = torch.sum(
++            (torsion_angles - pred_torsions_with_CB[:,:,1:,:]) ** 2 * torsion_mask[..., None],
++            dim=(-1, -2, -3)
++        ) / torch.sum(torsion_mask, dim=(-1, -2))
++
++
+         # atom loss
+         pred_atoms, atoms_mask = all_atom.to_atom37(pred_trans_1, pred_rotmats_1, aatype = noisy_batch['aatype'], torsions_with_CB = pred_torsions_with_CB, get_mask = True)  # atoms_mask (B,L,37)
+         atoms_mask = atoms_mask * loss_mask[...,None]  # (B,L,37)
+         pred_atoms_flat, gt_atoms_flat, _ = du.batch_align_structures(
+                     pred_atoms.reshape(num_batch, -1, 3), gt_atoms.reshape(num_batch, -1, 3), mask=atoms_mask.reshape(num_batch, -1)
+                 )
+-        gt_atoms = gt_atoms_flat * training_cfg.bb_atom_scale / norm_scale  # (B,true_atoms,3)
++        gt_atoms = gt_atoms_flat * training_cfg.bb_atom_scale / norm_scale  # (B, true_atoms,3)
+         pred_atoms = pred_atoms_flat * training_cfg.bb_atom_scale / norm_scale
+ 
+         bb_atom_loss = torch.sum(
+@@ -161,40 +176,39 @@ class FlowModule(LightningModule):
+ 
+ 
+ 
+-        # # Pairwise distance loss
+-        # pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
+-        # gt_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
+-        # pred_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
+-        # gt_flat_atoms = gt_bb_atoms.reshape([num_batch, num_res*3, 3])
+-        # gt_pair_dists = torch.linalg.norm(
+-        #     gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
+-        # pred_flat_atoms = pred_bb_atoms.reshape([num_batch, num_res*3, 3])
+-        # pred_pair_dists = torch.linalg.norm(
+-        #     pred_flat_atoms[:, :, None, :] - pred_flat_atoms[:, None, :, :], dim=-1)
++        # Pairwise distance loss
++        pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
++        gt_bb_atoms_pair = gt_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
++        pred_bb_atoms_pair = pred_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
++        gt_flat_atoms = gt_bb_atoms_pair.reshape([num_batch, num_res*3, 3])
++        gt_pair_dists = torch.linalg.norm(
++            gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
++        pred_flat_atoms = pred_bb_atoms_pair.reshape([num_batch, num_res*3, 3])
++        pred_pair_dists = torch.linalg.norm(
++            pred_flat_atoms[:, :, None, :] - pred_flat_atoms[:, None, :, :], dim=-1)
+ 
+-        # flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
+-        # flat_loss_mask = flat_loss_mask.reshape([num_batch, num_res*3])  # (B,L*3)
+-        # flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
+-        # flat_res_mask = flat_res_mask.reshape([num_batch, num_res*3])  # (B,L*3)
++        flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
++        flat_loss_mask = flat_loss_mask.reshape([num_batch, num_res*3])  # (B,L*3)
++        flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
++        flat_res_mask = flat_res_mask.reshape([num_batch, num_res*3])  # (B,L*3)
+ 
+-        # gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
+-        # pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
+-        # pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]  # (B,L*3, L*3)
++        gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
++        pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
++        pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]  # (B,L*3, L*3)
+ 
+-        # dist_mat_loss = torch.sum(
+-        #     (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
+-        #     dim=(1, 2))
+-        # dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
++        pair_dist_mat_loss = torch.sum(
++            (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
++            dim=(1, 2)) / (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
+ 
+ 
+         # sequence distance loss
+         pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
+-        gt_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
+-        pred_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
+-        gt_flat_atoms = gt_bb_atoms.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
++        gt_bb_atoms_seq = gt_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
++        pred_bb_atoms_seq = pred_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
++        gt_flat_atoms = gt_bb_atoms_seq.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
+         gt_seq_dists = torch.linalg.norm(
+             gt_flat_atoms[:, :-3, :] - gt_flat_atoms[:, 3:, :], dim=-1)  # (B,3*(L-1))
+-        pred_flat_atoms = pred_bb_atoms.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
++        pred_flat_atoms = pred_bb_atoms_seq.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
+         pred_seq_dists = torch.linalg.norm(
+             pred_flat_atoms[:, :-3, :] - pred_flat_atoms[:, 3:, :], dim=-1)  # (B,3*(L-1))
+ 
+@@ -204,20 +218,21 @@ class FlowModule(LightningModule):
+         gt_seq_dists = gt_seq_dists * flat_mask
+         pred_seq_dists = pred_seq_dists * flat_mask
+ 
+-        dist_mat_loss = torch.sum(
++        seq_dist_mat_loss = torch.sum(
+             (gt_seq_dists - pred_seq_dists)**2 * flat_mask,
+-            dim=(1))
+-        dist_mat_loss = dist_mat_loss / (torch.sum(flat_mask, dim=(1)))
++            dim=(1)) / (torch.sum(flat_mask, dim=(1)))
+ 
++        dist_mat_loss = pair_dist_mat_loss + seq_dist_mat_loss
+ 
+         se3_vf_loss = trans_loss + rots_vf_loss
+-        # auxiliary_loss = (bb_atom_loss + dist_mat_loss) * (
+-        #     t[:, 0] > training_cfg.aux_loss_t_pass
+-        # )
+-        auxiliary_loss = (bb_atom_loss + dist_mat_loss)
++        auxiliary_loss = (bb_atom_loss + dist_mat_loss) * (
++            t[:, 0] > training_cfg.aux_loss_t_pass
++        )
+         auxiliary_loss *= self._exp_cfg.training.aux_loss_weight
+         se3_vf_loss += auxiliary_loss
+ 
++        se3_vf_loss += torsion_loss
++
+         return {
+             "trans_loss": trans_loss,
+             "rots_vf_loss": rots_vf_loss,
+@@ -351,7 +366,8 @@ class FlowModule(LightningModule):
+         # self.ema.update(self.model)
+ 
+         seq_len = batch["aatype"].shape[1]
+-        batch_size = min(64, 500000 // seq_len**2)
++        batch_size = min(self._data_cfg.sampler.max_batch_size, self._data_cfg.sampler.max_num_res_squared // seq_len**2)  # dynamic batch size
++
+         for key,value in batch.items():
+             batch[key] = value.repeat((batch_size,)+(1,)*(len(value.shape)-1))
+         
+@@ -403,7 +419,8 @@ class FlowModule(LightningModule):
+         )
+         self._log_scalar(
+             "train/loss", train_loss, batch_size=num_batch)
+-        
++
++
+         return train_loss
+ 
+     def configure_optimizers(self):
+@@ -415,9 +432,13 @@ class FlowModule(LightningModule):
+ 
+ 
+     def predict_step(self, batch, batch_idx):
+-        device = f'cuda:{torch.cuda.current_device()}'
+-        interpolant = Interpolant(self._infer_cfg.interpolant) 
+-        interpolant.set_device(device)
++        # device = f'cuda:{torch.cuda.current_device()}'
++        # interpolant = Interpolant(self._infer_cfg.interpolant) 
++        # interpolant.set_device(device)
++        # self.interpolant = interpolant
++
++        self.interpolant.set_device(batch['res_mask'].device)
++
+ 
+         diffuse_mask = torch.ones(batch['aatype'].shape)
+ 
+@@ -426,7 +447,7 @@ class FlowModule(LightningModule):
+             self._output_dir, f'batch_idx_{batch_idx}_{filename}')
+ 
+         self.model.eval()
+-        atom37_traj, model_traj, _ = interpolant.sample(
++        atom37_traj, model_traj, _ = self.interpolant.sample(
+             batch, self.model
+         )
+ 
+diff --git a/weights/config.yaml b/weights/config.yaml
+deleted file mode 100644
+index fb5806f..0000000
+--- a/weights/config.yaml
++++ /dev/null
+@@ -1,139 +0,0 @@
+-data:
+-  # CSV for path and metadata to training examples.
+-  dataset:
+-    seed: 123
+-    use_rotate_enhance: False
+-    split_frac: 1.0  # 1.0 for no validation seperate
+-    use_split: True  # whether cut the sequence to slices
+-    split_len: 328
+-    min_num_res: 32
+-    max_num_res: 2000
+-    cache_num_res: 0
+-    subset: null
+-    samples_per_eval_length: 5
+-    num_eval_lengths: 32
+-    max_eval_length: 2000
+-    max_valid_num: 50
+-    csv_path: ./ATLAS/select/pkl/metadata_esm_3A.csv
+-    energy_csv_path: ./ATLAS/select/traj_info.csv
+-  loader:
+-    num_workers: 2
+-    prefetch_factor: 10
+-  sampler:
+-    max_batch_size: 64
+-    max_num_res_squared: 500000
+-    use_batch_repeats: false
+-    num_batches: null
+-
+-interpolant:
+-  min_t: 0.1
+-  separate_t: true
+-  provide_kappa: true
+-  hierarchical_t: false
+-  rots:
+-    train_schedule: linear
+-    sample_schedule: exp
+-    exp_rate: 10
+-  trans:
+-    batch_ot: true
+-    train_schedule: linear
+-    sample_schedule: linear
+-    sample_temp: 1.0
+-    vpsde_bmin: 0.1
+-    vpsde_bmax: 20.0
+-  sampling:
+-    num_timesteps: 100
+-    do_sde: false
+-  self_condition: ${model.edge_features.self_condition}
+-
+-model:
+-  dropout: 0.2
+-  node_embed_size: 256
+-  edge_embed_size: 128
+-  symmetric: False
+-  use_adapter_node: True   # This is overwritten by _init_ of FlowModel
+-  node_features:
+-    c_s: ${model.node_embed_size}
+-    c_pos_emb: 1280
+-    # c_pos_emb: ${model.edge_embed_size}
+-    c_timestep_emb: ${model.node_embed_size}
+-    embed_diffuse_mask: False
+-    separate_t: ${interpolant.separate_t}
+-    max_num_res: 2000
+-    timestep_int: 1000
+-    dropout: ${model.dropout}
+-  edge_features:
+-    single_bias_transition_n: 2
+-    c_s: ${model.node_embed_size}
+-    c_p: ${model.edge_embed_size}
+-    relpos_k: 64
+-    use_rbf: True
+-    num_rbf: 64
+-    feat_dim: ${model.edge_embed_size}
+-    num_bins: 64
+-    # max_dist: angstrom
+-    max_dist: 30.0  # 50.0
+-    dropout: ${model.dropout}
+-    self_condition: True
+-  ipa:
+-    c_s: ${model.node_embed_size}
+-    c_z: ${model.edge_embed_size}
+-    c_hidden: ${model.edge_embed_size}
+-    no_heads: 16
+-    no_qk_points: 32
+-    no_v_points: 8
+-    seq_tfmr_num_heads: 16
+-    seq_tfmr_num_layers: 2
+-    num_blocks: 6
+-    dropout: ${model.dropout}
+-
+-experiment:
+-  debug: False
+-  seed: 123
+-  num_devices: 8
+-  # warm_start: ./weights/esm_egf4.ckpt
+-  warm_start: null
+-  warm_start_cfg_override: True
+-  use_swa: False
+-  batch_ot:
+-    enabled: True
+-    cost: kabsch
+-    noise_per_sample: 1
+-    permute: False
+-  training:
+-    min_plddt_mask: null
+-    loss: se3_vf_loss
+-    bb_atom_scale: 0.1
+-    trans_scale: 0.1
+-    translation_loss_weight: 2.0
+-    t_normalize_clip: 0.9
+-    rotation_loss_weights: 1.0
+-    aux_loss_weight: 1.0  # 1.0
+-    aux_loss_t_pass: 0.25
+-    aatype_loss_weight: 0.0
+-  wandb:
+-    name: base
+-    project: P2DFlow
+-    save_code: True
+-    tags: []
+-  optimizer:
+-    # lr: 5e-5
+-    lr: 1e-4
+-  trainer:
+-    overfit_batches: 0
+-    min_epochs: 1 # prevents early stopping
+-    max_epochs: 50000
+-    accelerator: gpu
+-    log_every_n_steps: 1
+-    deterministic: False
+-    # strategy: ddp
+-    strategy: ddp_find_unused_parameters_true
+-    check_val_every_n_epoch: 2
+-    accumulate_grad_batches: 2
+-    gradient_clip_val: 10
+-  checkpointer:
+-    dirpath: ckpt/${experiment.wandb.project}/${experiment.wandb.name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+-    save_last: True
+-    save_top_k: 5
+-    monitor: valid/rmsd_loss
+-    mode: min

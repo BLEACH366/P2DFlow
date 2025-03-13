@@ -7,6 +7,7 @@ from collections import OrderedDict
 
 import numpy as np
 from tqdm import tqdm
+
 import biotite.structure as struct
 from biotite.structure.io.pdb import PDBFile
 
@@ -250,7 +251,6 @@ def atom37_to_pdb(
         f.write('END')
         
     return save_to
-
 
 def extract_backbone_coords_from_pdb(pdb_path: str, target_atoms: Optional[list] = ["CA"]):
     structure = PDBFile.read(pdb_path)

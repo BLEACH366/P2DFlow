@@ -1,45 +1,23 @@
-"""Script for preprocessing PDB files."""
-
 import argparse
 import dataclasses
 import functools as fn
 import pandas as pd
 import os
+import tree
+import torch
 import multiprocessing as mp
 import time
+import esm
 from Bio import PDB
 import numpy as np
-import mdtraj as md
 from data import utils as du
 from data import parsers
 from data import errors
-
-
-# Define the parser
-parser = argparse.ArgumentParser(
-    description='PDB processing script.')
-parser.add_argument(
-    '--pdb_dir',
-    help='Path to directory with PDB files.',
-    type=str)
-parser.add_argument(
-    '--num_processes',
-    help='Number of processes.',
-    type=int,
-    default=50)
-parser.add_argument(
-    '--write_dir',
-    help='Path to write results to.',
-    type=str,
-    default='preprocessed')
-parser.add_argument(
-    '--debug',
-    help='Turn on for debugging.',
-    action='store_true')
-parser.add_argument(
-    '--verbose',
-    help='Whether to log everything.',
-    action='store_true')
+from data.repr import get_pre_repr
+from openfold.data import data_transforms
+from openfold.utils import rigid_utils
+from data.cal_trans_rotmats import cal_trans_rotmats
+from data.ESMfold_pred import ESMFold_Pred
 
 
 def process_file(file_path: str, write_dir: str):
@@ -196,9 +174,126 @@ def main(args):
         f'Finished processing {succeeded}/{total_num_paths} files')
 
 
+def cal_repr(processed_file_path, model_esm2, alphabet, batch_converter, esm_device):
+    print(f'cal_repr for {processed_file_path}')
+    processed_feats_org = du.read_pkl(processed_file_path)
+    processed_feats = du.parse_chain_feats(processed_feats_org)
+
+    # Only take modeled residues.
+    modeled_idx = processed_feats['modeled_idx']
+    min_idx = np.min(modeled_idx)
+    max_idx = np.max(modeled_idx)
+    # del processed_feats['modeled_idx']
+    processed_feats = tree.map_structure(
+        lambda x: x[min_idx:(max_idx+1)], processed_feats)
+
+    # Run through OpenFold data transforms.
+    chain_feats = {
+        'aatype': torch.tensor(processed_feats['aatype']).long(),
+        'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
+        'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
+    }
+    chain_feats = data_transforms.atom37_to_frames(chain_feats)
+    rigids_1 = rigid_utils.Rigid.from_tensor_4x4(chain_feats['rigidgroups_gt_frames'])[:, 0]
+    rotmats_1 = rigids_1.get_rots().get_rot_mats()
+    trans_1 = rigids_1.get_trans()
+    # res_idx = processed_feats['residue_index']
+
+    node_repr_pre, pair_repr_pre = get_pre_repr(chain_feats['aatype'], model_esm2, alphabet, batch_converter, device = esm_device)  # (B,L,d_node_pre=1280), (B,L,L,d_edge_pre=20)
+    node_repr_pre = node_repr_pre[0].cpu()
+    pair_repr_pre = pair_repr_pre[0].cpu()
+
+    out = {
+            'aatype': chain_feats['aatype'],
+            'rotmats_1': rotmats_1,
+            'trans_1': trans_1,  # (L,3)
+            'res_mask': torch.tensor(processed_feats['bb_mask']).int(),
+            'bb_positions': processed_feats['bb_positions'],
+            'all_atom_positions':chain_feats['all_atom_positions'],
+            'node_repr_pre':node_repr_pre,
+            'pair_repr_pre':pair_repr_pre,
+        }
+
+    du.write_pkl(processed_file_path, out)
+
+def cal_static_structure(processed_file_path, raw_pdb_file, ESMFold):
+    output_total = du.read_pkl(processed_file_path)
+
+    save_dir = os.path.join(os.path.dirname(raw_pdb_file), 'ESMFold_Pred_results')
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, os.path.basename(processed_file_path)[:6]+'_esmfold.pdb')
+    if not os.path.exists(save_path):
+        print(f'cal_static_structure for {processed_file_path}')
+        ESMFold.predict_str(raw_pdb_file, save_path)
+    trans, rotmats = cal_trans_rotmats(save_path)
+    output_total['trans_esmfold'] = trans
+    output_total['rotmats_esmfold'] = rotmats
+
+    du.write_pkl(processed_file_path, output_total)
+
+
+def merge_pdb(metadata_path, traj_info_file, valid_seq_file, merged_output_file):
+    df1 = pd.read_csv(metadata_path)
+    df2 = pd.read_csv(traj_info_file)
+    df3 = pd.read_csv(valid_seq_file)
+
+    # 获取文件名
+    df1['traj_filename'] = [os.path.basename(i) for i in df1['raw_path']]
+
+    # 合并数据
+    merged = df1.merge(df2[['traj_filename', 'energy']], on='traj_filename', how='left')
+    merged['is_trainset'] = ~merged['traj_filename'].str[:6].isin(df3['file'])
+
+    # 保存结果
+    merged.to_csv(merged_output_file, index=False)
+    print('merge complete!')
+
+
 if __name__ == "__main__":
-    # Don't use GPU
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--pdb_dir", type=str, default="./dataset/ATLAS/select")
+    parser.add_argument("--write_dir", type=str, default="./dataset/ATLAS/select/pkl")
+    parser.add_argument("--csv_name", type=str, default="metadata.csv")
+    parser.add_argument("--debug", type=bool, default=False)
+    parser.add_argument("--num_processes", type=int, default=48)
+    parser.add_argument('--verbose', help='Whether to log everything.',action='store_true')
+
+    parser.add_argument("--esm_device", type=str, default='cuda')
+
+    parser.add_argument("--traj_info_file", type=str, default='./dataset/ATLAS/select/traj_info_select.csv')
+    parser.add_argument("--valid_seq_file", type=str, default='./inference/valid_seq.csv')
+    parser.add_argument("--merged_output_file", type=str, default='./dataset/ATLAS/select/pkl/metadata_merged.csv')
+
     args = parser.parse_args()
+
+    # process .pdb to .pkl
     main(args)
+
+    # cal_repr
+    csv_path = os.path.join(args.write_dir, args.csv_name)
+    pdb_csv = pd.read_csv(csv_path)
+    pdb_csv = pdb_csv.sort_values('modeled_seq_len', ascending=False)
+    model_esm2, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+    batch_converter = alphabet.get_batch_converter()
+    model_esm2.eval()
+    model_esm2.requires_grad_(False)
+    model_esm2.to(args.esm_device)
+    for idx in range(len(pdb_csv)):
+        cal_repr(pdb_csv.iloc[idx]['processed_path'], model_esm2, alphabet, batch_converter, args.esm_device)
+
+    # cal_static_structure
+    csv_path = os.path.join(args.write_dir, args.csv_name)
+    pdb_csv = pd.read_csv(csv_path)
+    ESMFold = ESMFold_Pred(device = args.esm_device)
+    for idx in range(len(pdb_csv)):
+        cal_static_structure(pdb_csv.iloc[idx]['processed_path'], pdb_csv.iloc[idx]['raw_path'], ESMFold)
+
+    # merge csv
+    csv_path = os.path.join(args.write_dir, args.csv_name)
+    merge_pdb(csv_path, args.traj_info_file, args.valid_seq_file, args.merged_output_file)
+
+
+    
+    
+

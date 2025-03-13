@@ -30,26 +30,32 @@ class FlowModel(nn.Module):
         #                             nn.Linear(self._ipa_conf.c_s, aatype_total)
         #                         )
 
-        self.use_np_update = False
-        self.use_e3_transformer = False
-        self.use_torsions = True
-        self.use_mid_bb_update = False
-        self.use_mid_bb_update_e3 = False
-        # self.use_adapter_node = self._model_conf.use_adapter_node
-        self.use_adapter_node = True
+        # self.use_np_update = False
+        # self.use_e3_transformer = False
+        # self.use_torsions = True
+        # self.use_mid_bb_update = False
+        # self.use_mid_bb_update_e3 = False
+        # self.use_adapter_node = True
 
+
+        self.use_torsions = model_conf.use_torsions
+        self.use_adapter_node = model_conf.use_adapter_node
+        self.use_mid_bb_update = model_conf.use_mid_bb_update
+        self.use_mid_bb_update_e3 = model_conf.use_mid_bb_update_e3
+        self.use_e3_transformer = model_conf.use_e3_transformer
 
 
         if self.use_adapter_node:
             self.energy_adapter = Energy_Adapter_Node(d_node=model_conf.node_embed_size, n_head=model_conf.ipa.no_heads, p_drop=model_conf.dropout)
 
         if self.use_torsions:
+            self.num_torsions = 7
             self.torsions_pred_layer1 = nn.Sequential(
                                         nn.Linear(self._ipa_conf.c_s, self._ipa_conf.c_s),
                                         nn.ReLU(),
                                         nn.Linear(self._ipa_conf.c_s, self._ipa_conf.c_s),
                                     )
-            self.torsions_pred_layer2 = nn.Linear(self._ipa_conf.c_s, 5*2)
+            self.torsions_pred_layer2 = nn.Linear(self._ipa_conf.c_s, self.num_torsions * 2)
 
         if self.use_e3_transformer or self.use_mid_bb_update_e3:
             self.max_dist = self._model_conf.edge_features.max_dist
@@ -331,14 +337,14 @@ class FlowModel(nn.Module):
 
         if self.use_torsions:
             pred_torsions = node_embed + self.torsions_pred_layer1(node_embed)
-            pred_torsions = self.torsions_pred_layer2(pred_torsions).reshape(input_feats['aatype'].shape+(5,2))  # (B,L,5,2)
+            pred_torsions = self.torsions_pred_layer2(pred_torsions).reshape(input_feats['aatype'].shape+(self.num_torsions,2))  # (B,L,self.num_torsions,2)
 
-            norm_torsions = torch.sqrt(torch.sum(pred_torsions ** 2, dim=-1, keepdim=True))  # (B,L,5,1)
-            pred_torsions = pred_torsions / norm_torsions  # (B,L,5,2)
+            norm_torsions = torch.sqrt(torch.sum(pred_torsions ** 2, dim=-1, keepdim=True))  # (B,L,self.num_torsions,1)
+            pred_torsions = pred_torsions / norm_torsions  # (B,L,self.num_torsions,2)
 
-            add_rot = pred_torsions.new_zeros((1,) * len(pred_torsions.shape[:-2])+(3,2))  # (1,1,3,2)
+            add_rot = pred_torsions.new_zeros((1,) * len(pred_torsions.shape[:-2])+(8-self.num_torsions,2))  # (1,1,8-self.num_torsions,2)
             add_rot[..., 1] = 1
-            add_rot = add_rot.expand(*pred_torsions.shape[:-2], -1, -1)  # (B,L,3,2)
+            add_rot = add_rot.expand(*pred_torsions.shape[:-2], -1, -1)  # (B,L,8-self.num_torsions,2)
             pred_torsions_with_CB = torch.concat([add_rot, pred_torsions],dim=-2)  # (B,L,8,2)
 
             # aatype  # (B,L)

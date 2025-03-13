@@ -1,0 +1,103 @@
+2025-03-13 10:30:11,619 INFO    StreamThr :46413 [internal.py:wandb_internal():86] W&B internal server running at pid: 46413, started at: 2025-03-13 10:30:11.617158
+2025-03-13 10:30:11,621 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status
+2025-03-13 10:30:11,650 INFO    WriterThread:46413 [datastore.py:open_for_write():85] open: ./wandb/offline-run-20250313_103011-4pgirfpr/run-4pgirfpr.wandb
+2025-03-13 10:30:11,804 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: run_start
+2025-03-13 10:30:11,832 DEBUG   HandlerThread:46413 [system_info.py:__init__():31] System info init
+2025-03-13 10:30:11,832 DEBUG   HandlerThread:46413 [system_info.py:__init__():46] System info init done
+2025-03-13 10:30:11,832 INFO    HandlerThread:46413 [system_monitor.py:start():181] Starting system monitor
+2025-03-13 10:30:11,832 INFO    SystemMonitor:46413 [system_monitor.py:_start():145] Starting system asset monitoring threads
+2025-03-13 10:30:11,833 INFO    HandlerThread:46413 [system_monitor.py:probe():201] Collecting system info
+2025-03-13 10:30:11,834 INFO    SystemMonitor:46413 [interfaces.py:start():190] Started cpu monitoring
+2025-03-13 10:30:11,834 INFO    SystemMonitor:46413 [interfaces.py:start():190] Started disk monitoring
+2025-03-13 10:30:11,836 INFO    SystemMonitor:46413 [interfaces.py:start():190] Started gpu monitoring
+2025-03-13 10:30:11,837 INFO    SystemMonitor:46413 [interfaces.py:start():190] Started memory monitoring
+2025-03-13 10:30:11,839 INFO    SystemMonitor:46413 [interfaces.py:start():190] Started network monitoring
+2025-03-13 10:30:11,885 DEBUG   HandlerThread:46413 [system_info.py:probe():195] Probing system
+2025-03-13 10:30:11,904 DEBUG   HandlerThread:46413 [system_info.py:_probe_git():180] Probing git
+2025-03-13 10:30:11,961 DEBUG   HandlerThread:46413 [system_info.py:_probe_git():188] Probing git done
+2025-03-13 10:30:11,961 DEBUG   HandlerThread:46413 [system_info.py:probe():240] Probing system done
+2025-03-13 10:30:11,961 DEBUG   HandlerThread:46413 [system_monitor.py:probe():210] {'os': 'Linux-3.10.0-1062.el7.x86_64-x86_64-with-glibc2.17', 'python': '3.10.12', 'heartbeatAt': '2025-03-13T02:30:11.886138', 'startedAt': '2025-03-13T02:30:11.556194', 'docker': None, 'cuda': None, 'args': (), 'state': 'running', 'program': '/cluster/home/shiqian/frame-flow-github/experiments/train_se3_flows.py', 'codePath': 'experiments/train_se3_flows.py', 'git': {'remote': 'git@github.com:BLEACH366/Deep-Learning.git', 'commit': '970b79a832a28e5e2fba50316fa31f2c26a7d4dc'}, 'email': 'Holmes@test.com', 'root': '/cluster/home/shiqian/frame-flow-github', 'host': 'node82', 'username': 'shiqian', 'executable': '/cluster/home/shiqian/mambaforge/envs/fm2/bin/python', 'cpu_count': 64, 'cpu_count_logical': 64, 'cpu_freq': {'current': 846.875, 'min': 800.0, 'max': 3400.0}, 'cpu_freq_per_core': [{'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 1100.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 3400.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 1100.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}, {'current': 800.0, 'min': 800.0, 'max': 3400.0}], 'disk': {'total': 1753.6384315490723, 'used': 33.40937805175781}, 'gpu': 'NVIDIA A100-SXM4-80GB', 'gpu_count': 1, 'gpu_devices': [{'name': 'NVIDIA A100-SXM4-80GB', 'memory_total': 85899345920}], 'memory': {'total': 1007.348705291748}}
+2025-03-13 10:30:11,962 INFO    HandlerThread:46413 [system_monitor.py:probe():211] Finished collecting system info
+2025-03-13 10:30:11,962 INFO    HandlerThread:46413 [system_monitor.py:probe():214] Publishing system info
+2025-03-13 10:30:11,962 DEBUG   HandlerThread:46413 [system_info.py:_save_pip():51] Saving list of pip packages installed into the current environment
+2025-03-13 10:30:11,967 DEBUG   HandlerThread:46413 [system_info.py:_save_pip():67] Saving pip packages done
+2025-03-13 10:30:11,968 DEBUG   HandlerThread:46413 [system_info.py:_save_conda():74] Saving list of conda packages installed into the current environment
+2025-03-13 10:30:33,008 DEBUG   HandlerThread:46413 [system_info.py:_save_conda():86] Saving conda packages done
+2025-03-13 10:30:33,008 DEBUG   HandlerThread:46413 [system_info.py:_save_code():89] Saving code
+2025-03-13 10:30:33,051 DEBUG   HandlerThread:46413 [system_info.py:_save_code():110] Saving code done
+2025-03-13 10:30:33,051 DEBUG   HandlerThread:46413 [system_info.py:_save_patches():127] Saving git patches
+2025-03-13 10:30:34,872 DEBUG   HandlerThread:46413 [system_info.py:_save_patches():169] Saving git patches done
+2025-03-13 10:30:34,875 INFO    HandlerThread:46413 [system_monitor.py:probe():216] Finished publishing system info
+2025-03-13 10:30:34,941 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:34,942 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: keepalive
+2025-03-13 10:30:34,942 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:34,942 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:34,943 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: keepalive
+2025-03-13 10:30:34,943 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:34,943 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:34,944 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: keepalive
+2025-03-13 10:30:34,944 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:34,944 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:34,944 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: keepalive
+2025-03-13 10:30:34,944 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:36,945 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:36,946 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:41,947 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:41,948 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:46,949 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:46,950 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:51,951 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:51,951 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:56,953 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:30:56,953 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:30:59,992 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:01,954 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:01,955 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:03,654 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:04,962 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:05,879 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:06,956 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:06,956 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:06,973 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:07,941 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:08,688 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:09,894 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:11,722 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:11,841 DEBUG   SystemMonitor:46413 [system_monitor.py:_start():159] Starting system metrics aggregation loop
+2025-03-13 10:31:11,957 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:11,958 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:12,755 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:15,432 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:16,837 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:16,959 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:16,959 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:18,065 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:19,021 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:20,061 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:21,442 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:21,960 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:21,961 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:22,830 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:24,025 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:24,993 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:26,416 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:26,962 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:26,962 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:27,433 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:28,608 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:29,727 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:30,745 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:31,964 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:31,964 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:32,342 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:34,301 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:35,319 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:36,639 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:36,965 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:36,966 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report
+2025-03-13 10:31:37,781 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:39,230 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:40,221 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:40,984 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: partial_history
+2025-03-13 10:31:41,968 DEBUG   HandlerThread:46413 [handler.py:handle_request():144] handle_request: status_report
+2025-03-13 10:31:41,968 DEBUG   SenderThread:46413 [sender.py:send_request():406] send_request: status_report

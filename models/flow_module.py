@@ -80,7 +80,11 @@ class FlowModule(LightningModule):
         rotmats_t = noisy_batch['rotmats_t']
         gt_rot_vf = so3_utils.calc_rot_vf(
             rotmats_t, gt_rotmats_1.type(torch.float32))
-        gt_bb_atoms = all_atom.to_atom37(gt_trans_1, gt_rotmats_1)[:, :, :3, :] 
+
+        gt_bb_atoms_total_result = all_atom.to_atom37(gt_trans_1, gt_rotmats_1, aatype=noisy_batch['aatype'], get_mask=True)
+        gt_bb_atoms = gt_bb_atoms_total_result[0][:, :, :3, :] 
+        atom37_mask = gt_bb_atoms_total_result[1]
+
         gt_atoms = noisy_batch['all_atom_positions']  # (B, L, 37, 3)
 
         # Timestep used for normalization.
@@ -104,7 +108,7 @@ class FlowModule(LightningModule):
         # aatype_loss = training_cfg.aatype_loss_weight * aatype_loss  # (B,)
 
         # Translation VF loss
-        trans_error = (gt_trans_1 - pred_trans_1) / norm_scale * training_cfg.trans_scale
+        trans_error = (gt_trans_1 - pred_trans_1) / norm_scale
         loss_denom = torch.sum(loss_mask, dim=-1) * 3  # 
         trans_loss = training_cfg.translation_loss_weight * torch.sum(
             trans_error ** 2 * loss_mask[..., None],
@@ -121,13 +125,24 @@ class FlowModule(LightningModule):
         # rots_vf_loss = torch.zeros(num_batch,device=pred_trans_1.device,dtype=torch.float32)
 
 
+        # torsion loss
+        torsion_angles, torsion_mask = all_atom.prot_to_torsion_angles(noisy_batch['aatype'], gt_atoms, atom37_mask)
+        # print('atom37_mask',atom37_mask.shape, atom37_mask[0,:5,:15])  # (B,L,37)
+        # print('torsion_angles',torsion_angles.shape, torsion_angles[0,:5,:15,:])  # (B,L,7,2)
+        # print('torsion_mask',torsion_mask.shape, torsion_mask[0,:5,:15])  # (B,L,7)
+        torsion_loss = torch.sum(
+            (torsion_angles - pred_torsions_with_CB[:,:,1:,:]) ** 2 * torsion_mask[..., None],
+            dim=(-1, -2, -3)
+        ) / torch.sum(torsion_mask, dim=(-1, -2))
+
+
         # atom loss
         pred_atoms, atoms_mask = all_atom.to_atom37(pred_trans_1, pred_rotmats_1, aatype = noisy_batch['aatype'], torsions_with_CB = pred_torsions_with_CB, get_mask = True)  # atoms_mask (B,L,37)
         atoms_mask = atoms_mask * loss_mask[...,None]  # (B,L,37)
         pred_atoms_flat, gt_atoms_flat, _ = du.batch_align_structures(
                     pred_atoms.reshape(num_batch, -1, 3), gt_atoms.reshape(num_batch, -1, 3), mask=atoms_mask.reshape(num_batch, -1)
                 )
-        gt_atoms = gt_atoms_flat * training_cfg.bb_atom_scale / norm_scale  # (B,true_atoms,3)
+        gt_atoms = gt_atoms_flat * training_cfg.bb_atom_scale / norm_scale  # (B, true_atoms,3)
         pred_atoms = pred_atoms_flat * training_cfg.bb_atom_scale / norm_scale
 
         bb_atom_loss = torch.sum(
@@ -161,40 +176,39 @@ class FlowModule(LightningModule):
 
 
 
-        # # Pairwise distance loss
-        # pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
-        # gt_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
-        # pred_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
-        # gt_flat_atoms = gt_bb_atoms.reshape([num_batch, num_res*3, 3])
-        # gt_pair_dists = torch.linalg.norm(
-        #     gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
-        # pred_flat_atoms = pred_bb_atoms.reshape([num_batch, num_res*3, 3])
-        # pred_pair_dists = torch.linalg.norm(
-        #     pred_flat_atoms[:, :, None, :] - pred_flat_atoms[:, None, :, :], dim=-1)
+        # Pairwise distance loss
+        pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
+        gt_bb_atoms_pair = gt_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
+        pred_bb_atoms_pair = pred_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
+        gt_flat_atoms = gt_bb_atoms_pair.reshape([num_batch, num_res*3, 3])
+        gt_pair_dists = torch.linalg.norm(
+            gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
+        pred_flat_atoms = pred_bb_atoms_pair.reshape([num_batch, num_res*3, 3])
+        pred_pair_dists = torch.linalg.norm(
+            pred_flat_atoms[:, :, None, :] - pred_flat_atoms[:, None, :, :], dim=-1)
 
-        # flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
-        # flat_loss_mask = flat_loss_mask.reshape([num_batch, num_res*3])  # (B,L*3)
-        # flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
-        # flat_res_mask = flat_res_mask.reshape([num_batch, num_res*3])  # (B,L*3)
+        flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
+        flat_loss_mask = flat_loss_mask.reshape([num_batch, num_res*3])  # (B,L*3)
+        flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
+        flat_res_mask = flat_res_mask.reshape([num_batch, num_res*3])  # (B,L*3)
 
-        # gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
-        # pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
-        # pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]  # (B,L*3, L*3)
+        gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
+        pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
+        pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]  # (B,L*3, L*3)
 
-        # dist_mat_loss = torch.sum(
-        #     (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
-        #     dim=(1, 2))
-        # dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
+        pair_dist_mat_loss = torch.sum(
+            (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
+            dim=(1, 2)) / (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
 
 
         # sequence distance loss
         pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
-        gt_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
-        pred_bb_atoms *= training_cfg.bb_atom_scale / norm_scale[..., None]
-        gt_flat_atoms = gt_bb_atoms.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
+        gt_bb_atoms_seq = gt_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
+        pred_bb_atoms_seq = pred_bb_atoms * training_cfg.bb_atom_scale / norm_scale[..., None]
+        gt_flat_atoms = gt_bb_atoms_seq.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
         gt_seq_dists = torch.linalg.norm(
             gt_flat_atoms[:, :-3, :] - gt_flat_atoms[:, 3:, :], dim=-1)  # (B,3*(L-1))
-        pred_flat_atoms = pred_bb_atoms.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
+        pred_flat_atoms = pred_bb_atoms_seq.reshape([num_batch, num_res*3, 3])  # (B,L*3,3)
         pred_seq_dists = torch.linalg.norm(
             pred_flat_atoms[:, :-3, :] - pred_flat_atoms[:, 3:, :], dim=-1)  # (B,3*(L-1))
 
@@ -204,19 +218,20 @@ class FlowModule(LightningModule):
         gt_seq_dists = gt_seq_dists * flat_mask
         pred_seq_dists = pred_seq_dists * flat_mask
 
-        dist_mat_loss = torch.sum(
+        seq_dist_mat_loss = torch.sum(
             (gt_seq_dists - pred_seq_dists)**2 * flat_mask,
-            dim=(1))
-        dist_mat_loss = dist_mat_loss / (torch.sum(flat_mask, dim=(1)))
+            dim=(1)) / (torch.sum(flat_mask, dim=(1)))
 
+        dist_mat_loss = pair_dist_mat_loss + seq_dist_mat_loss
 
         se3_vf_loss = trans_loss + rots_vf_loss
-        # auxiliary_loss = (bb_atom_loss + dist_mat_loss) * (
-        #     t[:, 0] > training_cfg.aux_loss_t_pass
-        # )
-        auxiliary_loss = (bb_atom_loss + dist_mat_loss)
+        auxiliary_loss = (bb_atom_loss + dist_mat_loss) * (
+            t[:, 0] > training_cfg.aux_loss_t_pass
+        )
         auxiliary_loss *= self._exp_cfg.training.aux_loss_weight
         se3_vf_loss += auxiliary_loss
+
+        se3_vf_loss += torsion_loss
 
         return {
             "trans_loss": trans_loss,
@@ -351,7 +366,8 @@ class FlowModule(LightningModule):
         # self.ema.update(self.model)
 
         seq_len = batch["aatype"].shape[1]
-        batch_size = min(64, 500000 // seq_len**2)
+        batch_size = min(self._data_cfg.sampler.max_batch_size, self._data_cfg.sampler.max_num_res_squared // seq_len**2)  # dynamic batch size
+
         for key,value in batch.items():
             batch[key] = value.repeat((batch_size,)+(1,)*(len(value.shape)-1))
         
@@ -403,7 +419,8 @@ class FlowModule(LightningModule):
         )
         self._log_scalar(
             "train/loss", train_loss, batch_size=num_batch)
-        
+
+
         return train_loss
 
     def configure_optimizers(self):
@@ -415,9 +432,13 @@ class FlowModule(LightningModule):
 
 
     def predict_step(self, batch, batch_idx):
-        device = f'cuda:{torch.cuda.current_device()}'
-        interpolant = Interpolant(self._infer_cfg.interpolant) 
-        interpolant.set_device(device)
+        # device = f'cuda:{torch.cuda.current_device()}'
+        # interpolant = Interpolant(self._infer_cfg.interpolant) 
+        # interpolant.set_device(device)
+        # self.interpolant = interpolant
+
+        self.interpolant.set_device(batch['res_mask'].device)
+
 
         diffuse_mask = torch.ones(batch['aatype'].shape)
 
@@ -426,7 +447,7 @@ class FlowModule(LightningModule):
             self._output_dir, f'batch_idx_{batch_idx}_{filename}')
 
         self.model.eval()
-        atom37_traj, model_traj, _ = interpolant.sample(
+        atom37_traj, model_traj, _ = self.interpolant.sample(
             batch, self.model
         )
 

@@ -2,10 +2,14 @@
 import logging
 import torch
 import os
+import re
+import random
+import esm
+
 import numpy as np
 import pandas as pd
 import random
-import esm
+
 from analysis import utils as au
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from data.residue_constants import restype_order
@@ -14,7 +18,7 @@ from data import utils as du
 from data.residue_constants import restype_atom37_mask
 from openfold.data import data_transforms
 from openfold.utils import rigid_utils
-import random
+from data.cal_trans_rotmats import cal_trans_rotmats
 
 
 class LengthDataset(torch.utils.data.Dataset):
@@ -35,22 +39,44 @@ class LengthDataset(torch.utils.data.Dataset):
         # self._all_filename = ['P450'] * 250
         # self._all_sample_seqs = [('GKLPPGPSPLPVLGNLLQMDRKGLLRSFLRLREKYGDVFTVYLGSRPVVVLCGTDAIREALVDQAEAFSGRGKIAVVDPIFQGYGVIFANGERWRALRRFSLATMRDFGMGKRSVEERIQEEARCLVEELRKSKGALLDNTLLFHSITSNIICSIVFGKRFDYKDPVFLRLLDLFFQSFSLISSFSSQVFELFSGFLKYFPGTHRQIYRNLQEINTFIGQSVEKHRATLDPSNPRDFIDVYLLRMEKDKSDPSSEFHHQNLILTVLSLFFAGTETTSTTLRYGFLLMLKYPHVTERVQKEIEQVIGSHRPPALDDRAKMPYTDAVIHEIQRLGDLIPFGVPHTVTKDTQFRGYVIPKNTEVFPVLSSALHDPRYFETPNTFNPGHFLDANGALKRNEGFMPFSLGKRICLGEGIARTELFLFFTTILQNFSIASPVPPEDIDLTPRESGVGNVPPSYQIRFLARH',0)] * 250
 
-
         validcsv = pd.read_csv(self._samples_cfg.validset_path)
+
         self._all_sample_seqs = []
         self._all_filename = []
+
+        prob_num = 500
+        exp_prob = np.exp([-prob/prob_num*2 for prob in range(prob_num)]).cumsum()
+        exp_prob = exp_prob/np.max(exp_prob)
+
         for idx in range(len(validcsv['seq'])):
 
-            # if idx < 25:
-            # if idx >=25 and idx < 50:
-            # if idx >=50 and idx < 75:
-            # if idx >= 75:
+            # if idx >= 0 and idx < 15:
+            # if idx >= 15 and idx < 30:
+            # if idx >= 30 and idx < 45:
+            # if idx >= 45 and idx < 60:
+            # if idx >= 60 and idx < 75:
+            # if idx >= 75 and idx < 90:
+            # if idx >= 90 and idx < 105:
             #     pass
             # else:
             #     continue
 
+
+            # if not re.search('2wsi_A',validcsv['file'][idx]):
+            #     continue
+
+
             self._all_filename += [validcsv['file'][idx]] * self._samples_cfg.sample_num
-            self._all_sample_seqs += [(validcsv['seq'][idx], 0)] * self._samples_cfg.sample_num
+
+            for batch_idx in range(self._samples_cfg.sample_num):
+
+                rand = random.random()
+                for prob in range(prob_num):
+                    if rand < exp_prob[prob]:
+                        energy = torch.tensor(prob/prob_num)
+                        break
+
+                self._all_sample_seqs += [(validcsv['seq'][idx], energy)]
 
 
         self._all_sample_ids = self._all_sample_seqs
@@ -87,13 +113,7 @@ class LengthDataset(torch.utils.data.Dataset):
         return len(self._all_sample_ids)
 
     def __getitem__(self, idx):
-        # num_res, sample_id = self._all_sample_ids[idx]
-        # batch = {
-        #     'num_res': num_res,
-        #     'sample_id': sample_id,
-        # }
-
-        seq, _ = self._all_sample_ids[idx]
+        seq, energy = self._all_sample_ids[idx]
         aatype = torch.tensor([restype_order[s] for s in seq])
         num_res = len(aatype)
 
@@ -104,82 +124,17 @@ class LengthDataset(torch.utils.data.Dataset):
         
         motif_mask = torch.ones(aatype.shape)
 
-        prob_num = 500
-        exp_prob = np.exp([-prob/prob_num*2 for prob in range(prob_num)]).cumsum()
-        exp_prob = exp_prob/np.max(exp_prob)
+
+        save_path = os.path.join(self.esm_savepath, "esm_" + self._all_filename[idx] + ".pdb")
+        if not os.path.exists(save_path):
+            seq_string = seq
+            with torch.no_grad():
+                output = self._folding_model.infer_pdb(seq_string)
+            with open(save_path, "w") as f:
+                f.write(output)
 
 
-        flag = True
-        while(flag):
-            rand = random.random()
-            for prob in range(prob_num):
-                if rand < exp_prob[prob]:
-                    energy = torch.tensor(prob/prob_num)
-
-                    # if energy > 0.8:
-                    #     flag = False
-                    flag = False
-                    break
-
-
-        seq_string = seq
-        with torch.no_grad():
-            output = self._folding_model.infer_pdb(seq_string)
-        import os
-        save_path = "temp_"+seq[:4]+".pdb"
-        with open(save_path, "w") as f:
-            f.write(output)
-
-        import dataclasses
-        from Bio import PDB
-        from data import parsers, errors
-
-        metadata = {}
-        parser = PDB.PDBParser(QUIET=True)
-        structure = parser.get_structure('test', save_path)
-        os.system("rm -rf "+save_path)
-        # Extract all chains
-        struct_chains = {
-            chain.id.upper(): chain
-            for chain in structure.get_chains()}
-        metadata['num_chains'] = len(struct_chains)
-        # Extract features
-        struct_feats = []
-        all_seqs = set()
-        for chain_id, chain in struct_chains.items():
-            # Convert chain id into int
-            chain_id = du.chain_str_to_int(chain_id)
-            chain_prot = parsers.process_chain(chain, chain_id)
-            chain_dict = dataclasses.asdict(chain_prot)
-            chain_dict = du.parse_chain_feats(chain_dict)
-            all_seqs.add(tuple(chain_dict['aatype']))
-            struct_feats.append(chain_dict)
-        if len(all_seqs) == 1:
-            metadata['quaternary_category'] = 'homomer'
-        else:
-            metadata['quaternary_category'] = 'heteromer'
-        complex_feats = du.concat_np_features(struct_feats, False)
-        # Process geometry features
-        complex_aatype = complex_feats['aatype']
-        metadata['seq_len'] = len(complex_aatype)
-        modeled_idx = np.where(complex_aatype != 20)[0]
-        if np.sum(complex_aatype != 20) == 0:
-            raise errors.LengthError('No modeled residues')
-        min_modeled_idx = np.min(modeled_idx)
-        max_modeled_idx = np.max(modeled_idx)
-        metadata['modeled_seq_len'] = max_modeled_idx - min_modeled_idx + 1
-        complex_feats['modeled_idx'] = modeled_idx
-
-        processed_feats = du.parse_chain_feats(complex_feats)
-        chain_feats_temp = {
-            'aatype': torch.tensor(processed_feats['aatype']).long(),
-            'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
-            'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
-        }
-        chain_feats_temp = data_transforms.atom37_to_frames(chain_feats_temp)
-        curr_rigid = rigid_utils.Rigid.from_tensor_4x4(chain_feats_temp['rigidgroups_gt_frames'])[:, 0]
-        trans_esmfold = curr_rigid.get_trans()
-        rotmats_esmfold = curr_rigid.get_rots().get_rot_mats()
+        trans_esmfold, rotmats_esmfold = cal_trans_rotmats(save_path)
 
         batch = {
             'filename':self._all_filename[idx],

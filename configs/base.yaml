@@ -3,9 +3,9 @@ data:
   dataset:
     seed: 123
     use_rotate_enhance: False
-    split_frac: 0.95  # 1.0 for no validation seperate
+    split_frac: 1.0  # 1.0 means all data except validation set is used for training
     use_split: True  # whether cut the sequence to slices
-    split_len: 328
+    split_len: 600  # 328
     min_num_res: 32
     max_num_res: 2000
     cache_num_res: 0
@@ -14,30 +14,32 @@ data:
     num_eval_lengths: 32
     max_eval_length: 2000
     max_valid_num: 50
-    csv_path: ./ATLAS/select/pkl/metadata_esm_3A.csv
-    energy_csv_path: ./ATLAS/select/traj_info.csv
+    csv_path: ./dataset/ATLAS/select/pkl/metadata_merged.csv
   loader:
-    num_workers: 2
+    num_workers: 8
     prefetch_factor: 10
   sampler:
     max_batch_size: 64
-    max_num_res_squared: 500000
+    max_num_res_squared: 500000  # dynamic batch size
     use_batch_repeats: false
     num_batches: null
 
 interpolant:
-  min_t: 0.1
+  min_t: 0.01
   separate_t: true
   provide_kappa: true
   hierarchical_t: false
+  add_noise: True
   rots:
     train_schedule: linear
     sample_schedule: exp
     exp_rate: 10
+    noise_scale: 1.5
   trans:
     batch_ot: true
     train_schedule: linear
     sample_schedule: linear
+    noise_scale: 10.0    # noise for esmfold_pred to get prior
     sample_temp: 1.0
     vpsde_bmin: 0.1
     vpsde_bmax: 20.0
@@ -47,11 +49,15 @@ interpolant:
   self_condition: ${model.edge_features.self_condition}
 
 model:
-  dropout: 0.2
+  dropout: 0.2   # 0.2
   node_embed_size: 256
   edge_embed_size: 128
   symmetric: False
-  use_adapter_node: True   # This is overwritten by _init_ of FlowModel
+  use_torsions: True
+  use_adapter_node: True
+  use_mid_bb_update: False
+  use_mid_bb_update_e3: False
+  use_e3_transformer: False
   node_features:
     c_s: ${model.node_embed_size}
     c_pos_emb: 1280
@@ -90,7 +96,7 @@ model:
 experiment:
   debug: False
   seed: 123
-  num_devices: 8
+  num_devices: 1
   # warm_start: ./weights/esm_egf4.ckpt
   warm_start: null
   warm_start_cfg_override: True
@@ -102,38 +108,37 @@ experiment:
     permute: False
   training:
     min_plddt_mask: null
-    loss: se3_vf_loss
-    bb_atom_scale: 0.1
-    trans_scale: 0.1
-    translation_loss_weight: 2.0
     t_normalize_clip: 0.9
-    rotation_loss_weights: 1.0
+    loss: se3_vf_loss
+    # trans_scale: 0.1
+    translation_loss_weight: 0.2
+    rotation_loss_weights: 1.0  # 1.0
+    bb_atom_scale: 0.1  # 0.1
     aux_loss_weight: 1.0  # 1.0
     aux_loss_t_pass: 0.25
     aatype_loss_weight: 0.0
   wandb:
-    name: base
+    name: loss_full
     project: P2DFlow
     save_code: True
     tags: []
   optimizer:
-    # lr: 5e-5
-    lr: 1e-4
+    lr: 1e-4   # 1e-4
   trainer:
     overfit_batches: 0
     min_epochs: 1 # prevents early stopping
-    max_epochs: 50000
+    max_epochs: 2000
     accelerator: gpu
     log_every_n_steps: 1
     deterministic: False
     # strategy: ddp
     strategy: ddp_find_unused_parameters_true
-    check_val_every_n_epoch: 2
+    check_val_every_n_epoch: 1
     accumulate_grad_batches: 2
     gradient_clip_val: 10
   checkpointer:
     dirpath: ckpt/${experiment.wandb.project}/${experiment.wandb.name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
     save_last: True
-    save_top_k: 5
+    save_top_k: 2000
     monitor: valid/rmsd_loss
     mode: min

@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
+import argparse
 warnings.filterwarnings("ignore")
 
 
@@ -47,11 +48,11 @@ def cal_PCA(md_pdb_path,ref_path,pred_pdb_path,n_components = 2):
     plt.scatter(df['PC1'],df['PC2'],marker='o')
     plt.show()
 
-    output_dir = os.path.dirname(ref_path)
-    output_filename = os.path.basename(ref_path).split('.')[0]
+    output_dir = os.path.dirname(md_pdb_path)
+    output_filename = os.path.basename(md_pdb_path).split('.')[0]
 
-    # df.to_csv(os.path.join(output_dir, f'{output_filename}_md_pca.csv'))
-    # plt.savefig(os.path.join(output_dir, f'{output_filename}_md_pca.png'))
+    df.to_csv(os.path.join(output_dir, f'{output_filename}_md_pca.csv'))
+    plt.savefig(os.path.join(output_dir, f'{output_filename}_md_pca.png'))
 
 
     for k,v in pred_pdb_path.items():
@@ -63,56 +64,43 @@ def cal_PCA(md_pdb_path,ref_path,pred_pdb_path,n_components = 2):
         pred_backbone = u_pred.select_atoms('name CA or name C or name N')
         pred_transformed = pc.transform(pred_backbone, n_components=n_components)
 
-
-
-
-        target = np.array([4,0])
-        min_value = 1e5
-        min_idx = -1
-        for idx,value in enumerate(pred_transformed):
-            if np.linalg.norm(value-target) < min_value:
-                min_value = np.linalg.norm(value-target)
-                min_idx = idx
-        print(min_value)
-        print(min_idx)
-        raise ValueError
-
-
-
-
         df = pd.DataFrame(pred_transformed,
                         columns=['PC{}'.format(i+1) for i in range(n_components)])
 
         plt.scatter(df['PC1'],df['PC2'],marker='o')
         plt.show()
 
-        # output_dir = os.path.dirname(ref_path)
-        # output_filename = os.path.basename(ref_path).split('.')[0]
+        output_dir = os.path.dirname(v)
+        output_filename = os.path.basename(v).split('.')[0]
         df.to_csv(os.path.join(output_dir, f'{output_filename}_{k}_pca.csv'))
         plt.savefig(os.path.join(output_dir, f'{output_filename}_{k}_pca.png'))
     plt.clf()
 
 
 if __name__ == '__main__':
-    pred_pdb_path_org={
-        'esm_n':'/cluster/home/shiqian/frame-flow-test1/valid/evaluate/esm_n_pred',
-        # 'alphaflow':'/cluster/home/shiqian/frame-flow-test1/valid/evaluate/alphaflow_pred',
-        # 'Str2Str':'/cluster/home/shiqian/frame-flow-test1/valid/evaluate/Str2Str_pred',
-        # 'test1':'/cluster/home/shiqian/frame-flow-test1/valid/evaluate/test_05_1',
-    }
-    md_pdb_path_org='/cluster/home/shiqian/frame-flow-test1/valid/evaluate/ATLAS_valid'
-    ref_path_org='/cluster/home/shiqian/frame-flow-test1/valid/evaluate/crystal'
 
-    # file_list = ['2wsi_A.pdb','2z4u_A.pdb','3pes_A.pdb']
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--pred_pdb_dir", type=str, default="./inference/test/pred_merge_results")
+    parser.add_argument("--target_dir", type=str, default="./inference/test/target_dir")
+    parser.add_argument("--crystal_dir", type=str, default="./inference/test/crystal_dir")
+
+    args = parser.parse_args()
+
+
+    pred_pdb_path_org={
+        'P2DFlow':args.pred_pdb_dir,
+    }
+    md_pdb_path_org = args.target_dir
+    ref_path_org = args.crystal_dir
+
 
     for file in os.listdir(md_pdb_path_org):
-    # for file in file_list:
         if re.search('\.pdb',file):
             pred_pdb_path={
-                'esm_n':'',
+                'P2DFlow':'',
                 # 'alphaflow':'',
                 # 'Str2Str':'',
-                # 'test1':'',
             }
             for k,v in pred_pdb_path.items():
                 pred_pdb_path[k]=os.path.join(pred_pdb_path_org[k],file)

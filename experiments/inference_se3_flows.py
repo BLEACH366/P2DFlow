@@ -36,19 +36,20 @@ class Sampler:
         """
         ckpt_path = cfg.inference.ckpt_path
         ckpt_dir = os.path.dirname(ckpt_path)
-        ckpt_cfg = OmegaConf.load(os.path.join(ckpt_dir, 'config.yaml'))
+        # ckpt_cfg = OmegaConf.load(os.path.join(ckpt_dir, 'config.yaml'))
+        # ckpt_cfg = torch.load(ckpt_path, map_location="cpu")['hyper_parameters']['cfg']
 
         # Set-up config.
         OmegaConf.set_struct(cfg, False)
-        OmegaConf.set_struct(ckpt_cfg, False)
-        cfg = OmegaConf.merge(cfg, ckpt_cfg)
-        cfg.experiment.checkpointer.dirpath = './'
+        # OmegaConf.set_struct(ckpt_cfg, False)
+        # cfg = OmegaConf.merge(cfg, ckpt_cfg)
+        # cfg.experiment.checkpointer.dirpath = './'
 
         self._cfg = cfg
-        self._pmpnn_dir = cfg.inference.pmpnn_dir
+        # self._pmpnn_dir = cfg.inference.pmpnn_dir
         self._infer_cfg = cfg.inference
         self._samples_cfg = self._infer_cfg.samples
-        self._rng = np.random.default_rng(self._infer_cfg.seed)
+        # self._rng = np.random.default_rng(self._infer_cfg.seed)
 
         # Set-up directories to write results to
         self._ckpt_name = '/'.join(ckpt_path.replace('.ckpt', '').split('/')[-3:])
@@ -99,124 +100,6 @@ class Sampler:
             devices=devices,
         )
         trainer.predict(self._flow_module, dataloaders=dataloader)
-
-        self._output_ckpt_dir = os.path.join(
-            self._infer_cfg.output_dir,
-            self._ckpt_name
-        )
-
-        for root, dirs, files in os.walk(self._output_dir):
-            if re.search("batch_idx",root):
-                print(root)
-                os.makedirs(os.path.join(root, 'self_consistency'), exist_ok=True)
-                pdb_path = None
-                for file in files:
-                    if re.search("sample.*pdb",file):
-                        shutil.copy(os.path.join(root, file), 
-                                    os.path.join(root, 'self_consistency'))
-                        pdb_path = os.path.join(root, file)
-                        break
-                _ = self.run_self_consistency(
-                    os.path.join(root, 'self_consistency'),
-                    pdb_path,
-                    motif_mask=None)
-
-    def eval_test(self):
-        output_dir = "inference_outputs/weights/epoch=0-step=985/"
-        for root, dirs, files in os.walk(output_dir):
-            if re.search("sample_",root) and not (re.search("esmf",root) or 
-                                                  re.search("self_consistency",root) or 
-                                                  re.search("seqs",root)):
-                print(root)
-                os.makedirs(os.path.join(root, 'self_consistency'), exist_ok=True)
-                pdb_path = None
-                for file in files:
-                    if re.search("sample.*pdb",file):
-                        shutil.copy(os.path.join(root, file), 
-                                    os.path.join(root, 'self_consistency'))
-                        pdb_path = os.path.join(root, file)
-                        break
-                _ = self.run_self_consistency(
-                    os.path.join(root, 'self_consistency'),
-                    pdb_path,
-                    motif_mask=None)
-
-    def run_self_consistency(
-                self,
-                decoy_pdb_dir: str,
-                reference_pdb_path: str,
-                motif_mask: Optional[np.ndarray]=None):
-            """Run self-consistency on design proteins against reference protein.
-            
-            Args:
-                decoy_pdb_dir: directory where designed protein files are stored.
-                reference_pdb_path: path to reference protein file
-                motif_mask: Optional mask of which residues are the motif.
-
-            Returns:
-                Writes ProteinMPNN outputs to decoy_pdb_dir/seqs
-                Writes ESMFold outputs to decoy_pdb_dir/esmf
-                Writes results in decoy_pdb_dir/sc_results.csv
-            """
-
-            # Run ESMFold on each ProteinMPNN sequence and calculate metrics.
-            mpnn_results = {
-                'tm_score': [],
-                'sample_path': [],
-                'header': [],
-                'sequence': [],
-                'rmsd': [],
-            }
-
-            esmf_dir = os.path.join(decoy_pdb_dir, 'esmf')
-            os.makedirs(esmf_dir, exist_ok=True)
-            # fasta_seqs = fasta.FastaFile.read(mpnn_fasta_path)
-            sample_feats = du.parse_pdb_feats('sample', reference_pdb_path)
-
-            # Run ESMFold
-            with open(os.path.join(decoy_pdb_dir,"../seq.txt"),'r') as f:
-                seq_specified = f.read()
-            string = seq_specified
-            header = "seq_specified"
-            try:
-                esmf_sample_path = os.path.join(esmf_dir, f'sample_specified.pdb')
-                _ = self.run_folding(string, esmf_sample_path)
-                esmf_feats = du.parse_pdb_feats('folded_sample', esmf_sample_path)
-                sample_seq = du.aatype_to_seq(sample_feats['aatype'])
-
-                # Calculate scTM of ESMFold outputs with reference protein
-                _, tm_score = metrics.calc_tm_score(
-                    sample_feats['bb_positions'], esmf_feats['bb_positions'],
-                    sample_seq, sample_seq)
-                rmsd = metrics.calc_aligned_rmsd(
-                    sample_feats['bb_positions'], esmf_feats['bb_positions'])
-                if motif_mask is not None:
-                    sample_motif = sample_feats['bb_positions'][motif_mask]
-                    of_motif = esmf_feats['bb_positions'][motif_mask]
-                    motif_rmsd = metrics.calc_aligned_rmsd(
-                        sample_motif, of_motif)
-                    mpnn_results['motif_rmsd'].append(motif_rmsd)
-                mpnn_results['rmsd'].append(rmsd)
-                mpnn_results['tm_score'].append(tm_score)
-                mpnn_results['sample_path'].append(esmf_sample_path)
-                mpnn_results['header'].append(header)
-                mpnn_results['sequence'].append(string)
-            except Exception as e: 
-                pass
-
-            # Save results to CSV
-            csv_path = os.path.join(decoy_pdb_dir, 'sc_results.csv')
-            mpnn_results = pd.DataFrame(mpnn_results)
-            mpnn_results.to_csv(csv_path)
-
-    def run_folding(self, sequence, save_path):
-        """Run ESMFold on sequence."""
-        with torch.no_grad():
-            output = self._folding_model.infer_pdb(sequence)
-
-        with open(save_path, "w") as f:
-            f.write(output)
-        return output  
         
 
 

@@ -22,27 +22,20 @@ def ramachandran_eval(all_paths, pdb_file, output_dir):
         angle_results = ramachandran.results.angles
         # print(angle_results.shape)
 
-        ramachandran.plot(color='black', marker='.')
-        plt.savefig(os.path.join(output_dir,os.path.basename(dirpath)+'_'+pdb_file.split('.')[0]+'.png'))
-        plt.clf()
+        # ramachandran.plot(color='black', marker='.')
 
         angle_results_all.append(angle_results.reshape([-1,2]))
 
 
-        df = pd.DataFrame(angle_results.reshape([-1,2]))
-        df.to_csv(os.path.join(output_dir, os.path.basename(dirpath)+'_'+pdb_file.split('.')[0]+'.csv'), index=False)
+        # df = pd.DataFrame(angle_results.reshape([-1,2]))
+        # df.to_csv(os.path.join(output_dir, os.path.basename(dirpath)+'_'+pdb_file.split('.')[0]+'.csv'), index=False)
 
 
     points1 = angle_results_all[0]
     grid_size = 360  # 网格的大小
     x_bins = np.linspace(-180, 180, grid_size)
     y_bins = np.linspace(-180, 180, grid_size)
-    result_tmp={
-        'file':pdb_file,
-        'esm_n_pred':None,
-        'alphaflow_pred':None,
-        'Str2Str_pred':None,
-        }
+    result_tmp={}
     for idx in range(len(angle_results_all[1:])):
         idx = idx + 1
         points2 = angle_results_all[idx]
@@ -55,34 +48,41 @@ def ramachandran_eval(all_paths, pdb_file, output_dir):
         mask1 = hist1 > 0
         mask2 = hist2 > 0
 
-        # 计算交集和并集
         intersection = np.logical_and(mask1, mask2).sum()
-        union = np.logical_or(mask1, mask2).sum()
+        all_mask2 = mask2.sum()
+        val_ratio = intersection / all_mask2
+        print(os.path.basename(all_paths[idx]), "val_ratio:", val_ratio)
 
-        # 计算交并比 (IoU)
-        iou = intersection / union if union > 0 else 0
-        print("Intersection over Union (IoU):", iou)
 
-        result_tmp[os.path.basename(all_paths[idx])] = iou
+        result_tmp[os.path.basename(all_paths[idx])] = val_ratio
+    result_tmp['file'] = pdb_file
 
     return result_tmp
 
 
 
 if __name__ == "__main__":
-    all_paths = ["/cluster/home/shiqian/frame-flow-test1/valid/evaluate/ATLAS_valid",
-                "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/esm_n_pred",
+    key1 = 'P2DFlow_epoch19'
+    all_paths = [
+                "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/ATLAS_valid",
+                # "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/esm_n_pred",
                 "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/alphaflow_pred",
-                "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/Str2Str_pred",]
+                "/cluster/home/shiqian/frame-flow-test1/valid/evaluate/Str2Str_pred",
+
+                f'/cluster/home/shiqian/frame-flow-test1/valid/evaluate/{key1}',
+                
+                ]
     output_dir = '/cluster/home/shiqian/frame-flow-test1/valid/evaluate/Ramachandran'
     os.makedirs(output_dir, exist_ok=True)
     results={
             'file':[],
-            'esm_n_pred':[],
+            # 'esm_n_pred':[],
             'alphaflow_pred':[],
             'Str2Str_pred':[],
+
+            key1:[],
             }
-    for file in os.listdir(all_paths[1]):
+    for file in os.listdir(all_paths[0]):
         if re.search('\.pdb',file):
 
             pdb_file = file
@@ -96,4 +96,4 @@ if __name__ == "__main__":
                 results[key].append(result_tmp[key])
 
     out_total_df = pd.DataFrame(results)
-    out_total_df.to_csv(os.path.join(output_dir,'Ramachandran_plot_result.csv'), index=False)
+    out_total_df.to_csv(os.path.join(output_dir,f'Ramachandran_plot_validity_{key1}.csv'),index=False)
