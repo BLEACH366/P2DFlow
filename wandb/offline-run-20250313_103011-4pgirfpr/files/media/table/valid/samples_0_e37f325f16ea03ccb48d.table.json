@@ -1,1 +1,0 @@
-{"columns": ["sample_path", "global_step", "Protein"], "data": [["ckpt/P2DFlow/loss_full/2025-03-13_10-30-03/idx_0_len_130_rmsd_15.377839038275926_tm_0.1466919235036314.pdb", 0, "Molecule"], ["ckpt/P2DFlow/loss_full/2025-03-13_10-30-03/idx_1_len_46_rmsd_15.244450383725361_tm_0.10873641547912323.pdb", 0, "Molecule"]]}
