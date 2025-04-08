@@ -5,7 +5,7 @@ P2DFlow is a protein ensemble generative model with SE(3) flow matching based on
 Technical details and evaluation results are provided in our paper ( 🎉 It has been accepted by JCTC ):
 * [P2DFlow: A Protein Ensemble Generative Model with SE(3) Flow Matching](https://pubs.acs.org/doi/abs/10.1021/acs.jctc.4c01620)
 
-The codes has also been uploaded to [Huggingface](https://huggingface.co/BLEACH366/P2DFlow) !
+The codes have also been uploaded to [Huggingface](https://huggingface.co/BLEACH366/P2DFlow) !
 
 <p align="center">
     <img src="resources/workflow.jpg" width="600"/>
