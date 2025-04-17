@@ -39,7 +39,7 @@ conda activate P2DFlow
 #### (tips: If you want to use the data we have preprocessed, please go directly to `3. Process selected dataset`; if you prefer to process the data from scratch or work with your own data, please start from the beginning)
 
 #### 1. Download raw ATLAS dataset
-(i) Download the `Analysis & MDs` dataset from [ATLAS](https://www.dsimb.inserm.fr/ATLAS/) or [here](https://pan.baidu.com/s/1L1hxxGvCOca0rde1nN9t3A?pwd=0436), or you can use `./dataset/download.py` by running:
+(i) Download the `Analysis & MDs` dataset from [ATLAS](https://www.dsimb.inserm.fr/ATLAS/) or [Baidu Cloud Drive](https://pan.baidu.com/s/1L1hxxGvCOca0rde1nN9t3A?pwd=0436), or you can use `./dataset/download.py` by running:
 ```
 python ./dataset/download.py
 ```
